@@ -295,7 +295,7 @@ App-store ratings are solicited in-app and skew positive; Trustpilot is self-sel
 
 ---
 
-## 9. Implications for Fleet Atlas
+## 9. Implications for Fare Desk
 
 - **Position:** the independent flight-price analyst — the decision layer between search and the airline. Not a metasearch, not a booking site, not a deal newsletter, not an AI agent.
 - **Primary user:** Maya, the flexible leisure planner. Every screen should answer her three questions: *what are my options, what is the real total, and should I book now?*
@@ -308,7 +308,7 @@ App-store ratings are solicited in-app and skew positive; Trustpilot is self-sel
 - **Affiliate revenue is a bridge, not the model.** If the business depends on redirects, the advice will drift toward the highest bidder and the trust wedge collapses. Plan a paid Pro tier, API or hosted convenience, and keep ranking independent.
 - **Primary distribution:** burned OTA customers, deal-hunter communities for credibility, privacy/open-source users, and diaspora routes once coverage is dense.
 - **Primary constraint:** no advice without enough data. “Collecting baseline” and “no clear signal” are legitimate product states.
-- **Biggest risk:** cold-start history, not competition. Google gives tracking away free; Fleet Atlas has to earn the right to advise route by route.
+- **Biggest risk:** cold-start history, not competition. Google gives tracking away free; Fare Desk has to earn the right to advise route by route.
 
 ---
 

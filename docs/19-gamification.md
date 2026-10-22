@@ -1,6 +1,6 @@
 # Gamification
 
-**Thesis: gamify the decision, not the purchase.** Fleet Atlas is used a few times a year for a high-stakes choice. A daily streak imported from Duolingo would manufacture a habit the product does not need and cannot honestly reward. The game layer should make the trade-offs legible, reward better calls, and then get out of the way.
+**Thesis: gamify the decision, not the purchase.** Fare Desk is used a few times a year for a high-stakes choice. A daily streak imported from Duolingo would manufacture a habit the product does not need and cannot honestly reward. The game layer should make the trade-offs legible, reward better calls, and then get out of the way.
 
 A useful test for every mechanic: **would this still be worth building if the user booked nothing?** If yes, it is probably aligned. If no, it is probably extraction.
 
@@ -8,7 +8,7 @@ A useful test for every mechanic: **would this still be worth building if the us
 
 ## 1. What the evidence says
 
-| Product / case | What worked | What went wrong | Lesson for Fleet Atlas |
+| Product / case | What worked | What went wrong | Lesson for Fare Desk |
 |---|---|---|---|
 | **Duolingo** | 7-day streaks correlate with course completion; friend streaks and streak freezes improve retention (company A/B tests) | Streak anxiety; loss aversion; paid power-ups; users ending streaks in protest | Streaks fit daily, identity-relevant behaviour. Flights are episodic. Do not copy the cadence. |
 | **Strava** | Segments, kudos and challenges sustain a fitness community | Public leaderboards were gamed; the 2018 heatmap exposed sensitive locations | Social must be opt-in, friend-only, aggregate, and off by default. |
@@ -99,7 +99,7 @@ Ship after buy/wait and fare weather, before accounts or social features. Everyt
 1. **FareBench calibration leaderboard.** Opt-in, scored by Brier score or reliability, not savings.
 2. **State of Airfare / Year in Travel.** Public report and private annual recap; receipts, not bragging.
 3. **Community “What people paid”.** Opt-in, aggregate, minimum sample, privacy-preserving.
-4. **API/MCP receipt.** Let other agents cite Fleet Atlas’s fare evidence and savings methodology.
+4. **API/MCP receipt.** Let other agents cite Fare Desk’s fare evidence and savings methodology.
 5. **Savings Circles at scale.** Group goals, no public profiles, no spend status.
 
 ---

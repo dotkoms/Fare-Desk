@@ -1,4 +1,6 @@
-# Fleet
+# Fare Desk
+
+**Repository:** `dotkoms/fleet` — the app is Fare Desk; the repo keeps its original name.
 
 A field manual for paying less for planes, trains and coaches — the data sources that actually exist, which ones need an API and which need scraping, when to buy, what is live right now, and a multi-agent setup that watches it all.
 
@@ -100,13 +102,24 @@ Scan wide with free or cheap scrapers. Verify the shortlist with a stable paid s
 
 ## Ground rules
 
-- **Redirect, don't sell.** Fleet Atlas links to the airline, OTA or operator; it does not process payment, issue tickets, or handle changes and refunds.
-- **No booking automation.** The fleet finds and captures; a human transacts on the provider's site.
+- **Redirect, don't sell.** Fare Desk links to the airline, OTA or operator; it does not process payment, issue tickets, or handle changes and refunds.
+- **No booking automation.** The agents find and capture; a human transacts on the provider's site.
 - **Total cost or nothing.** Bags, seats, booking fees, terminal transfers and the value of time belong on every line.
 - **Link to the source.** Fetching public data is one risk; republishing airline fare content is the risk that cost Skiplagged $9.4M.
 - **Fares are not guaranteed until ticketed.** Mistake fares can be cancelled; “live” award results can be stale.
 - **Not legal advice.** Contracts of carriage and local rules still govern your ticket.
 
+## Licence
+
+- **Code:** GPL-3.0. See [LICENSE](LICENSE).
+- **Contributions:** CLA. See [CLA.md](CLA.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Name and logo:** [TRADEMARK.md](TRADEMARK.md).
+- **Fare data, fee database and hosted service:** proprietary. See [DATA-LICENSE.md](DATA-LICENSE.md).
+- **Documentation:** CC BY 4.0 unless a file says otherwise.
+- **Security:** [SECURITY.md](SECURITY.md).
+
+GPL-3.0 requires source when the software is distributed. It does **not** require source for a hosted service. If that network protection becomes the priority, AGPL-3.0 is the alternative licence.
+
 ## Contributing
 
-This is a personal research repo. If you change an access claim, note the date and the source. The data landscape moves faster than the prose.
+Fare Desk is an open-source project. Read [CONTRIBUTING.md](CONTRIBUTING.md) and sign the [CLA](CLA.md) before your first pull request. If you change an access claim, note the date and the source. The data landscape moves faster than the prose.

@@ -1,0 +1,31 @@
+Fare Desk
+Copyright (C) 2026 dotkoms and Fare Desk contributors
+
+This program is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+---
+
+## Third-party components
+
+The project uses or plans to use the following components and datasets. Their licences apply to them, not to Fare Desk.
+
+- **react-globe.gl** — MIT
+- **three.js** — MIT
+- **Obscura** — Apache-2.0
+- **MapLibre GL JS** (if used) — BSD-3-Clause
+- **Natural Earth** — public domain
+- **OurAirports** — public domain
+- **OpenFlights routes** (demo only) — ODbL 1.0; attribution and share-alike apply
+- **Open-Meteo** — CC BY 4.0
+- **US Bureau of Transportation Statistics** — public domain
+- **GTFS feeds** — per-feed licences; see each feed’s attribution file
+
+See the package manifests and data cards for the full set and the current versions.
+
+## Data boundary
+
+The GPL-3.0 licence applies to the source code. It does not grant rights to Fare Desk’s fare history, fee database, airport-access data, provider registry, API keys or hosted service. See `DATA-LICENSE.md`.

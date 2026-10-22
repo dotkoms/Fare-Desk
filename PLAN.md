@@ -1,4 +1,4 @@
-# Fleet Atlas — flight finder with buy/wait intelligence
+# Fare Desk — flight finder with buy/wait intelligence
 
 A 3D globe of airports and routes, a search console on the left, and a route page that tells you whether to buy now or wait — using that route's own price history, not a generic “book 39 days out” rule.
 
@@ -10,9 +10,9 @@ A 3D globe of airports and routes, a search console on the left, and a route pag
 
 ## 1. The product in one paragraph
 
-Fleet Atlas is a discovery and redirection product: it finds the best flights and the best time to buy, then sends the traveller to the airline or OTA to complete the purchase. It does not sell tickets, take payment, or handle changes and refunds.
+Fare Desk is a discovery and redirection product: it finds the best flights and the best time to buy, then sends the traveller to the airline or OTA to complete the purchase. It does not sell tickets, take payment, or handle changes and refunds.
 
-A traveller opens Fleet Atlas, types “Berlin” and “Lisbon,” picks a week in March, and sees the best flights ranked on total cost. The globe draws the candidate routes as arcs; hovering a result lifts its arc; clicking selects it, dims the rest to 15%, and moves the camera only if the route is outside the safe area. A second tab answers the harder question: *should I buy now?* It shows the route's price history, where today's fare sits in the distribution, what usually happens between now and departure, and a plain recommendation — book now, wait, or watch — with the range, sample size and track record. When a route looks good, it also checks whether another country storefront the traveller is eligible for beats the home price after FX and bags. A third mode, Explore, turns the globe into a map of cheap places from your home airport.
+A traveller opens Fare Desk, types “Berlin” and “Lisbon,” picks a week in March, and sees the best flights ranked on total cost. The globe draws the candidate routes as arcs; hovering a result lifts its arc; clicking selects it, dims the rest to 15%, and moves the camera only if the route is outside the safe area. A second tab answers the harder question: *should I buy now?* It shows the route's price history, where today's fare sits in the distribution, what usually happens between now and departure, and a plain recommendation — book now, wait, or watch — with the range, sample size and track record. When a route looks good, it also checks whether another country storefront the traveller is eligible for beats the home price after FX and bags. A third mode, Explore, turns the globe into a map of cheap places from your home airport.
 
 ---
 
@@ -41,7 +41,7 @@ A traveller opens Fleet Atlas, types “Berlin” and “Lisbon,” picks a week
 
 ### Commerce model
 
-Fleet Atlas is not a travel agency, OTA or merchant of record. It does not sell, issue, change or refund tickets, and it never takes payment. Every result links to the provider — the airline, the OTA, or the operator — and the transaction happens there.
+Fare Desk is not a travel agency, OTA or merchant of record. It does not sell, issue, change or refund tickets, and it never takes payment. Every result links to the provider — the airline, the OTA, or the operator — and the transaction happens there.
 
 - The displayed price is verified at the time of display; the final price and availability are confirmed on the provider's site.
 - The provider's fare rules, payment requirements and after-sales terms govern the purchase.
@@ -56,7 +56,7 @@ Fleet Atlas is not a travel agency, OTA or merchant of record. It does not sell,
 
 ```
 ┌──────────────────────────┬─────────────────────────────────────────────┐
-│ FLEET ATLAS              │                                             │
+│ FARE DESK              │                                             │
 │                          │                                             │
 │  [One way] [Return]      │              3D GLOBE                       │
 │                          │                                             │
@@ -1019,21 +1019,22 @@ The unique data layers in section 10 attach to phases 3–7. Do not build a visu
 - **Reference data:** IANA time zones, ECB daily FX, Nager.Date holidays, first-party provider registry.
 - **Hosting:** Vercel for web and static dashboard; Rust API/scheduler/Obscura in a container with SQLite or Postgres.
 - **Globe:** the lobby, not the desk. List-first; flat route board below 1.35 R; no auto-rotation; no textures, stars or city lights.
+- **Name:** Fare Desk.
+- **Visual direction:** low-chroma paper globe in light mode, night globe in dark; no satellite imagery, stars or city lights.
+- **Licence:** GPL-3.0 with a CLA; Fare Desk trademark policy; fare data and the hosted service remain proprietary.
 
 ### Still open
 
 1. **Home market:** which airport or country is the first-class citizen? The advice engine needs a concentration of routes.
 2. **Live or fixtures:** fixtures for the interaction, or live SerpAPI from the start?
-3. **Visual direction:** realistic Blue Marble or a stylised dark globe.
-4. **Advice policy:** how aggressive should BUY be below p10? How much weight on refundability?
-5. **POS markets:** which three to five storefronts to screen by default, and whether the traveller can add their own.
-6. **POS threshold:** €20 or 5% — or a different rule for premium cabins.
-7. **Explore route network:** derive destinations from live search history, or license a current schedule source?
-8. **School holiday coverage:** which countries at launch; the data is manual and uneven.
-9. **MCT source:** use a conservative default, or curate airport-level values from the start?
-10. **Deal feeds:** include error fares and promos in v1, or keep the product purely search and timing?
-11. **Budget:** SerpAPI cap and hosting.
-12. **Name:** “Fleet Atlas” is a working title.
+3. **Advice policy:** how aggressive should Book now be below p10? How much weight on refundability?
+4. **POS markets:** which three to five storefronts to screen by default, and whether the traveller can add their own.
+5. **POS threshold:** €20 or 5% — or a different rule for premium cabins.
+6. **Explore route network:** derive destinations from live search history, or license a current schedule source?
+7. **School holiday coverage:** which countries at launch; the data is manual and uneven.
+8. **MCT source:** use a conservative default, or curate airport-level values from the start?
+9. **Deal feeds:** include error fares and promos in v1, or keep the product purely search and timing?
+10. **Budget:** SerpAPI cap and hosting.
 
 ---
 
