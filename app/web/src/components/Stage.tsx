@@ -1,7 +1,12 @@
+import { Suspense, lazy } from 'react'
 import type { Itinerary, RouteSnapshot } from '../types'
+import GlobeBoundary from './GlobeBoundary'
 import Intel from './Intel'
 import RouteBoard from './RouteBoard'
 import { formatDuration } from '../lib/format'
+
+// three.js is heavy; keep it out of the shell bundle and load it alongside the stage
+const GlobeStage = lazy(() => import('./GlobeStage'))
 
 type Props = {
   itinerary: Itinerary | null
@@ -12,9 +17,30 @@ type Props = {
   dateLabel: string
   passengers: number
   bags: number
+  itineraries: Itinerary[]
+  selectedId: string | null
+  onSelect: (id: string) => void
+  originCode: string
+  destinationCode: string
+  isDark: boolean
 }
 
-export default function Stage({ itinerary, snapshot, tab, onTab, routeLabel, dateLabel, passengers, bags }: Props) {
+export default function Stage({
+  itinerary,
+  snapshot,
+  tab,
+  onTab,
+  routeLabel,
+  dateLabel,
+  passengers,
+  bags,
+  itineraries,
+  selectedId,
+  onSelect,
+  originCode,
+  destinationCode,
+  isDark,
+}: Props) {
   if (!itinerary) {
     return (
       <section className="stage stage-empty" aria-label="Selected flight">
@@ -43,6 +69,19 @@ export default function Stage({ itinerary, snapshot, tab, onTab, routeLabel, dat
           <small>total</small>
         </div>
       </div>
+
+      <GlobeBoundary>
+        <Suspense fallback={<div className="globe-wrap globe-loading" aria-hidden="true" />}>
+          <GlobeStage
+            itineraries={itineraries}
+            selectedId={selectedId}
+            onSelect={onSelect}
+            originCode={originCode}
+            destinationCode={destinationCode}
+            isDark={isDark}
+          />
+        </Suspense>
+      </GlobeBoundary>
 
       <RouteBoard itinerary={itinerary} />
 

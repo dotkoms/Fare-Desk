@@ -41,19 +41,23 @@ const paperGlobe = new THREE.MeshPhongMaterial({
 });
 
 <Globe
-  backgroundColor="transparent"
+  backgroundColor="rgba(0, 0, 0, 0)"
   globeMaterial={paperGlobe}
   polygonsData={land.features}
   polygonCapColor={() => "#E9EEF4"}
-  polygonSideColor={() => "transparent"}
+  polygonSideColor={() => "#DCE9F5"}
   polygonStrokeColor={() => "#C9D4DF"}
   polygonAltitude={() => 0.005}
   showAtmosphere
   atmosphereColor="#9FB8C9"
   atmosphereAltitude={0.12}
-  rendererConfig={{ antialias: false, alpha: true }}
+  rendererConfig={{ antialias: true, alpha: true }}
 />
 ```
+
+- `backgroundColor` must be a parseable CSS colour, **not** the keyword `transparent`. `three-render-objects` runs `polished.parseToRgb` on it; `parseToRgb("transparent")` throws, the update aborts before lights and objects are added, and the scene is never made visible — a blank canvas with no console message from our code. Use `"rgba(0, 0, 0, 0)"`.
+- `polygonSideColor` is not alpha-aware in the same way: pass the ocean colour so the 0.5% extrusion blends into the sphere instead of drawing a black rim.
+- `globeMaterial` with `shininess: 0` keeps the sphere flat. A photographic texture plus the default specular highlight leaves a warm smear near the pole and fights the label contrast.
 
 - `polygonAltitude={0.005}` avoids z-fighting with the sphere. Larger values extrude the land; keep it flat.
 - Natural Earth 110m is enough at world/continent scale; use 50m only if the camera gets close.
@@ -61,6 +65,7 @@ const paperGlobe = new THREE.MeshPhongMaterial({
 - A dotted `hexPolygonsData` land layer is an optional stylistic alternative, similar to the GitHub globe. It is heavier; use it only if the look is worth the frame budget.
 - Atmosphere: a 2px rim at 12% is enough. No glow, no bloom.
 - `showGraticules` exists, but it draws a full graticule; if you use it, hide it at route scale.
+- Load the globe with `React.lazy` so Three.js (~2 MB minified, ~570 kB gzipped) lands in its own chunk. Shell bundle stays under 250 kB.
 
 ---
 
@@ -213,6 +218,7 @@ const updateLabels = () => {
 Then render absolutely positioned labels in a sibling `<div>` over the canvas. Rank them (pinned first, then traffic, then deal strength), collision-test the boxes, and hide the ones that do not fit. Budgets: 12 labels at world view, 24 at continent, 40 at region, endpoints plus three connections at route scale.
 
 - `getScreenCoords` can return coordinates for airports on the far side of the globe. Test the surface normal against the camera direction, or compare against the horizon, and fade those labels out.
+- Recompute on `globe.controls().addEventListener("change", updateLabels)`, not `onZoom` alone. The camera fly from `pointOfView` and the first ResizeObserver measurement both land labels at stale coordinates, and a stale label is silently clipped by the wrap.
 - Labels are `pointer-events: none` and `aria-hidden="true"`; the list carries the accessible information.
 - Use IATA only at world view (`BER`), `BER Berlin` at region view, and `BER Berlin / 10:40` at route view.
 - A 2px halo in the surface colour plus a 1px shadow is enough.
@@ -258,7 +264,7 @@ Clamp to 350–800ms, interrupt on pointer input, and jump instantly under `pref
 | D fallback | 0 | 0 | 0 | 1.0 | static poster + list |
 
 - Lower `arcCurveResolution` (64 → 32) and `pathResolution` (2 → 1) on mobile.
-- Set `rendererConfig={{ antialias: false, alpha: true }}`.
+- Set `rendererConfig={{ antialias: true, alpha: true }}`; drop antialias on tier C.
 - Use `pointsMerge` for the static airport layer; keep the interactive layer small.
 - Call `pauseAnimation()` when the tab is hidden or the mobile sheet is full; `resumeAnimation()` when visible.
 - Show a static SVG/canvas poster immediately and crossfade to WebGL when the first frame is ready.

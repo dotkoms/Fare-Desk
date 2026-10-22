@@ -70,6 +70,7 @@ export default function App() {
     new URLSearchParams(window.location.search).get('tab') === 'intel' ? 'intel' : 'itinerary',
   )
   const [theme, setTheme] = useState<Theme>(initialTheme)
+  const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
 
   const key = routeKey(activeQuery.origin, activeQuery.destination)
   const itineraries = useMemo(() => itinerariesByRoute[key] ?? [], [key])
@@ -77,6 +78,15 @@ export default function App() {
   const selected = sorted.find((itinerary) => itinerary.id === selectedId) ?? sorted[0] ?? null
   const snapshot = snapshots[key] ?? null
   const routeLabel = `${activeQuery.origin} → ${activeQuery.destination}`
+
+  useEffect(() => {
+    const query = window.matchMedia('(prefers-color-scheme: dark)')
+    const onChange = (event: MediaQueryListEvent) => setSystemDark(event.matches)
+    query.addEventListener('change', onChange)
+    return () => query.removeEventListener('change', onChange)
+  }, [])
+
+  const isDark = theme === 'dark' || (theme === 'system' && systemDark)
 
   useEffect(() => {
     const root = document.documentElement
@@ -148,6 +158,12 @@ export default function App() {
           dateLabel={formatDateRange(activeQuery)}
           passengers={activeQuery.passengers}
           bags={activeQuery.bags}
+          itineraries={sorted}
+          selectedId={selected?.id ?? null}
+          onSelect={setSelectedId}
+          originCode={activeQuery.origin}
+          destinationCode={activeQuery.destination}
+          isDark={isDark}
         />
       </main>
     </div>

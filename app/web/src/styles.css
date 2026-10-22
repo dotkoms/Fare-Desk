@@ -645,6 +645,130 @@ button:disabled {
   text-transform: uppercase;
 }
 
+.globe-fallback {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  min-height: 220px;
+  padding: 24px;
+  border: 1px solid var(--stage-line);
+  border-radius: 8px;
+  background: var(--stage-2);
+}
+
+.fallback-globe {
+  width: 150px;
+  height: 150px;
+  flex: none;
+}
+
+.globe-fallback h3 {
+  margin: 6px 0;
+  font-family: var(--display);
+  font-size: 20px;
+}
+
+.globe-fallback p {
+  max-width: 44ch;
+  margin: 0;
+  color: var(--stage-ink-2);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.globe-wrap {
+  position: relative;
+  height: 380px;
+  overflow: hidden;
+  border: 1px solid var(--stage-line);
+  border-radius: 8px;
+  background:
+    radial-gradient(circle at 50% 45%, rgba(103, 199, 240, 0.08), transparent 55%),
+    var(--stage-2);
+}
+
+.globe-wrap canvas {
+  display: block;
+}
+
+.globe-loading {
+  display: grid;
+  place-items: center;
+}
+
+.globe-loading::after {
+  content: '';
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--stage-line);
+  border-radius: 50%;
+  animation: globe-loading-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes globe-loading-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .globe-loading::after {
+    animation: none;
+  }
+}
+
+.globe-labels {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.globe-label {
+  position: absolute;
+  transform: translate(10px, -50%);
+  padding: 3px 6px;
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.2;
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+.globe-label strong {
+  display: block;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.globe-label span {
+  display: block;
+  margin-top: 1px;
+  font-family: var(--sans);
+  font-size: 9px;
+  opacity: 0.72;
+}
+
+.globe-hint {
+  position: absolute;
+  left: 14px;
+  bottom: 12px;
+  color: var(--stage-ink-2);
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.72;
+  pointer-events: none;
+}
+
 .route-board {
   display: flex;
   flex-direction: column;
@@ -1111,6 +1235,10 @@ button:disabled {
     min-height: 75vh;
     padding: 20px;
     border-radius: 8px;
+  }
+
+  .globe-wrap {
+    height: 300px;
   }
 
   .stage-head {
