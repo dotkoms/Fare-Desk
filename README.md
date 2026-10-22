@@ -18,6 +18,7 @@ A field manual for paying less for planes, trains and coaches — the data sourc
 | Understand why fares behave this way | [docs/01-how-fares-are-priced.md](docs/01-how-fares-are-priced.md) |
 | Build the agent fleet | [docs/08-agent-fleet.md](docs/08-agent-fleet.md) and [agents/](agents/) |
 | Avoid wasting time on myths | [docs/07-myths.md](docs/07-myths.md) |
+| Build the interactive 3D map app | [PLAN.md](PLAN.md) |
 
 If you only do three things: search the whole week and every nearby airport, run a split-ticket check before buying rail, and price the trip door to door including bags and the hotel night you are replacing.
 
@@ -28,6 +29,7 @@ If you only do three things: search the whole week and every nearby airport, run
 ```
 fleet/
 ├─ README.md
+├─ PLAN.md                         Interactive 3D flight/train finder plan
 ├─ docs/
 │  ├─ 00-short-version.md          Six rules and the highest-ROI moves
 │  ├─ 01-how-fares-are-priced.md   Fare buckets, unbundling, quota pricing, yield
