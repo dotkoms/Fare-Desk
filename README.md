@@ -22,6 +22,9 @@ A field manual for paying less for planes, trains and coaches — the data sourc
 | See the unique data layers and open-source playbook | [PLAN.md §10](PLAN.md#10-unique-data-and-visual-layers) and [§18](PLAN.md#18-standout-open-source-playbook) |
 | Solve cold start and Explore coverage | [docs/14-cold-start-and-coverage.md](docs/14-cold-start-and-coverage.md) |
 | Deploy the web on Vercel | [docs/15-hosting-on-vercel.md](docs/15-hosting-on-vercel.md) |
+| Design the interface | [UI/UX](docs/16-ui-ux.md) · [design system](docs/17-design-system.md) · [colour](docs/18-color.md) |
+| Add gamification without dark patterns | [docs/19-gamification.md](docs/19-gamification.md) |
+| Understand users and competitors | [docs/20-users-and-competitors.md](docs/20-users-and-competitors.md) |
 | Decide what is an API and what needs a browser | [docs/12-rust-data-layer.md](docs/12-rust-data-layer.md) |
 | Check whether another storefront is cheaper | [docs/13-point-of-sale.md](docs/13-point-of-sale.md) |
 
@@ -51,7 +54,12 @@ fleet/
 │  ├─ 12-rust-data-layer.md        Rust feeds, API vs scrape, Obscura
 │  ├─ 13-point-of-sale.md          Storefront, currency and payment arbitrage
 │  ├─ 14-cold-start-and-coverage.md History seeding and current route coverage
-│  └─ 15-hosting-on-vercel.md      Vercel split, data plane and costs
+│  ├─ 15-hosting-on-vercel.md      Vercel split, data plane and costs
+│  ├─ 16-ui-ux.md                  Screens, flows, copy, accessibility
+│  ├─ 17-design-system.md          Type, layout, components, motion
+│  ├─ 18-color.md                  Palette, semantics, contrast
+│  ├─ 19-gamification.md           Ethical mechanics and metrics
+│  └─ 20-users-and-competitors.md  Beachhead, personas, competitive gap
 └─ agents/
    ├─ README.md                    How to install the fleet
    ├─ desk-ops.md

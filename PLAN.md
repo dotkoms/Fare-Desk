@@ -12,7 +12,7 @@ A 3D globe of airports and routes, a search console on the left, and a route pag
 
 Fleet Atlas is a discovery and redirection product: it finds the best flights and the best time to buy, then sends the traveller to the airline or OTA to complete the purchase. It does not sell tickets, take payment, or handle changes and refunds.
 
-A traveller opens Fleet Atlas, types “Berlin” and “Lisbon,” picks a week in March, and sees the best flights ranked on total cost. The globe draws the candidate routes as arcs; hovering a result lifts its arc, clicking it frames the route and dims the rest. A second tab answers the harder question: *should I buy now?* It shows the route's price history, where today's fare sits in the distribution, what usually happens between now and departure, and a plain recommendation — buy, wait, or watch — with a confidence level. When a route looks good, it also checks whether another country storefront the traveller is eligible for beats the home price after FX and bags. A third mode, Explore, turns the globe into a map of cheap places from your home airport.
+A traveller opens Fleet Atlas, types “Berlin” and “Lisbon,” picks a week in March, and sees the best flights ranked on total cost. The globe draws the candidate routes as arcs; hovering a result lifts its arc; clicking selects it, dims the rest to 15%, and moves the camera only if the route is outside the safe area. A second tab answers the harder question: *should I buy now?* It shows the route's price history, where today's fare sits in the distribution, what usually happens between now and departure, and a plain recommendation — book now, wait, or watch — with the range, sample size and track record. When a route looks good, it also checks whether another country storefront the traveller is eligible for beats the home price after FX and bags. A third mode, Explore, turns the globe into a map of cheap places from your home airport.
 
 ---
 
@@ -21,7 +21,7 @@ A traveller opens Fleet Atlas, types “Berlin” and “Lisbon,” picks a week
 ### Goals
 
 - Find the best flight for a specific trip, where “best” means total cost and total time, not headline fare.
-- Tell the traveller when to buy, with route-level evidence and an honest confidence level.
+- Tell the traveller when to buy, with route-level evidence, an honest range, the sample size and a track record.
 - Surface legitimate point-of-sale savings, net of FX and eligibility, without faking residency.
 - Make cheap destinations visible from one home airport, using the globe for discovery.
 - Show the route structure — airports, stops, layovers — so the price makes sense.
@@ -37,6 +37,7 @@ A traveller opens Fleet Atlas, types “Berlin” and “Lisbon,” picks a week
 - A machine-learning price predictor. v1 uses empirical distributions.
 - User accounts, saved trips, social features.
 - Full global live search on every query. Cached routes and background refresh are part of the design.
+- A mandatory 3D globe or 3D-only navigation. The list and route board must work without WebGL.
 
 ### Commerce model
 
@@ -99,7 +100,7 @@ Fleet Atlas is not a travel agency, OTA or merchant of record. It does not sell,
 │                          │                                             │
 │  ┌────────────────────┐  │                                             │
 │  │ BUY                │  │                                             │
-│  │ 78% confidence     │  │                                             │
+│  │ 7 in 10 calls      │  │                                             │
 │  │ Expected +€35 if   │  │                                             │
 │  │ you wait 3 weeks   │  │                                             │
 │  └────────────────────┘  │                                             │
@@ -115,7 +116,7 @@ Fleet Atlas is not a travel agency, OTA or merchant of record. It does not sell,
 1. Pick origin, destination, dates, passengers and bags.
 2. Results appear as cards; the globe draws the top candidate routes.
 3. Hover a card: its arc lifts and brightens; a tooltip shows airports and local times.
-4. Click a card: camera frames the route, other arcs dim, the detail drawer opens.
+4. Click a card: select it; `ensureVisible` only if needed; other arcs dim to 15%; the detail drawer opens.
 5. “When to buy” opens the route-intelligence tab for the same route and dates.
 
 **B. Ask when to buy**
@@ -132,6 +133,8 @@ Fleet Atlas is not a travel agency, OTA or merchant of record. It does not sell,
 3. Arcs are coloured by discount; the panel lists destinations with price and percentile.
 4. Clicking a destination opens its route page.
 
+The interface specification, component system and palette are in [docs/16-ui-ux.md](docs/16-ui-ux.md), [docs/17-design-system.md](docs/17-design-system.md) and [docs/18-color.md](docs/18-color.md). Gamification is in [docs/19-gamification.md](docs/19-gamification.md). User and competitor research is in [docs/20-users-and-competitors.md](docs/20-users-and-competitors.md).
+
 ### Empty, loading and error states
 
 - **No origin:** globe idle, panel shows recent searches.
@@ -142,46 +145,63 @@ Fleet Atlas is not a travel agency, OTA or merchant of record. It does not sell,
 
 ---
 
-## 4. The 3D scene
+## 4. The globe and route board
+
+The globe is the lobby, not the desk. It carries orientation, Explore and route context. The list and the route board carry the decision.
 
 ### Rendering
 
-**Recommended: `react-globe.gl` (Three.js).** Arcs, points, labels, rings, hover and click, camera flight and animated dashes are built in. The globe is the product's face; use a library that already solved great-circle arcs.
+**v1: `react-globe.gl` for the globe, plus a flat route board for route scale.** The globe owns world and continent views; below a camera altitude of 1.35 R, crossfade to a flat route board. A globe shows one hemisphere, and at route scale the destination can sit behind the horizon.
 
-**Alternative:** MapLibre globe projection plus deck.gl, if basemap fidelity and terrain become more important than the cinematic globe.
+**Alternative if one engine matters more than speed of build:** MapLibre GL JS globe + deck.gl, which gives globe/Mercator switching, DOM labels, collision and `fitBounds` in one stack. More integration work, fewer hand-rolled systems.
 
 ### Layers
 
 | Layer | Content | Notes |
 |---|---|---|
-| Globe | NASA Blue Marble texture, bump map, night lights | 4k desktop, 2k mobile |
-| Atmosphere | Rim glow, thin haze | Subtle |
-| Airports | Points sized by scheduled departures; IATA labels at high zoom | Cap labels to top 40 in view |
-| Flight arcs | Great-circle arcs, altitude scaled by distance | Cap 300 visible |
-| Selection rings | Pulsing rings at origin and destination | Stop after 3 cycles |
+| Globe | Low-chroma paper globe (light) or night globe (dark); no texture, no stars, no city lights | 2k is enough; no NASA imagery |
+| Atmosphere | 2px rim at 12% opacity | No glow, no bloom |
+| Airports | Points sized by scheduled departures; HTML labels in screen space | Budgeted, collision-tested |
+| Flight arcs | Great-circle arcs, altitude by distance | 40 / 120 / 300 by zoom |
+| Selection | 2.5px arc + 2px casing, endpoint rings, one 600ms ring | No pulse loop |
 | Tooltip | HTML overlay with code, city, local time, price | Pointer-following |
+
+### Labels
+
+- Render labels as **HTML in screen space**, not 3D text meshes. Position them from `getScreenCoords`, rank them, and collision-test them.
+- Pinned labels (origin, destination, selection, hover) are never hidden. Lower-priority labels hide when they collide.
+- Budgets: 12 labels / 40 arcs at world view; 24 / 120 at continent; 40 / 300 at region; endpoints plus three connections at route view. Halve on mobile.
+- On a camera flight, hide non-pinned labels and fade them in over 120ms after the camera settles.
 
 ### Arc behaviour
 
-- **Altitude:** `0.05 + 0.25 × (distance / maxDistance)`, clamped.
-- **Resolution:** 64 points normally, 128 for the selected itinerary.
-- **Base colour:** cyan `#38BDF8`; selected white `#F8FAFC`; dimmed 8% opacity.
-- **Explore mode:** colour by discount versus baseline — teal below p10, neutral between p10 and p50, amber above p50 — with a legend and price labels, not colour alone.
-- **Animation:** 600ms draw-on when results arrive; slow dash along the selected route. Respect `prefers-reduced-motion`.
+- **Altitude:** `clamp(0.02 + 0.18 × distanceKm / 20000, 0.02, 0.20)`; selected +0.02.
+- **Width encodes state, not price:** 1px base, 1.5px hover, 2.5px selected plus a 2px casing.
+- **Colour:** base `--arc-base` at 60%; selected `--ink` on light and `#F8FAFC` on dark; dimmed 35% on hover, 15% on selection. Never 8%.
+- **Deduplicate by airport pair:** twelve BER–LIS itineraries are one arc with a “12 options” badge, not twelve arcs.
+- **One-stop itineraries are polylines with a connection dot**, not direct arcs.
+- **No draw-on, no dash, no plane animation.** Fade new arcs in over 200ms after the camera settles. A fare search is not live tracking.
+- **Explore arcs are destination rays**, not flight paths: one direct line from the home airport to each of the top 12 deals, with the true stop count in the list.
 
 ### Camera
 
-- Origin selected: fly to the airport at altitude 1.8 over 900ms.
-- Search complete: frame the bounding box of the top results, with padding for the panel.
-- Selection: frame the itinerary; for long routes, centre the midpoint and pull back.
-- Anti-meridian: split geometries at ±180°; test Auckland–Santiago and Tokyo–Honolulu.
-- Idle: auto-rotate at 0.3 rpm until first interaction; disabled by reduced motion.
+- Hover and keyboard focus never move the camera.
+- Prefer `ensureVisible` over a flight: if both endpoints are already inside the safe rectangle with 24px margin, do not move.
+- Flight duration: `clamp(350 + 450 × angularDistance/π, 350, 800)` ms; interruptible by any pointer or key input.
+- Suppress auto-fit for 8 seconds after the user moves the camera; show a “Fit route” chip instead.
+- Frame the route between the panel and the safe area; on mobile, pad above the sheet.
+- Anti-meridian: normalize the longitude delta to the short way; split geometry at ±180°; test Auckland–Santiago, Tokyo–Honolulu and Los Angeles–Sydney.
+- **No auto-rotation.** A rotating globe moves targets under the cursor, makes labels swim and triggers vestibular symptoms.
 
 ### Performance
 
-- 300 arcs and 1,500 points at 60fps on an M1 Air and a mid-range Android.
-- Initial JS under 1.5 MB gzipped; texture lazy-loaded.
-- Pause the render loop when the tab is hidden.
+- Tier A desktop: 300 arcs, 1,500 points, 40 labels, DPR 2.
+- Tier B laptop: 180 arcs, 900 points, 32 labels, DPR 1.5.
+- Tier C mobile: 100 arcs, 500 points, 16 labels, DPR 1.5, no atmosphere.
+- Tier D fallback: static poster plus the list; no WebGL.
+- Show a static poster immediately and crossfade to WebGL when the first frame is ready.
+- Handle `webglcontextlost` with the poster and a reload action.
+- Pause the render loop when the tab is hidden or the sheet is full.
 
 ---
 
@@ -205,11 +225,16 @@ Fleet Atlas is not a travel agency, OTA or merchant of record. It does not sell,
 
 ### Route intelligence
 
-- Current price and percentile against the route's 90-day distribution.
+- **Route strip first:** `BER 10:40 ── 1h 50m ── LIS 12:30 / nonstop`. A one-stop itinerary shows the connection and layover. This is more legible than the globe for “what am I buying?”
+- Current total and percentile against the route's 90-day distribution.
 - 90-day median, p10, p90.
-- Price-history chart with the travel date marked.
-- Days-to-departure curve: what the fare usually does from here.
-- Recommendation card: BUY / WAIT / WATCH, confidence, expected change, downside.
+- Recommendation card **above** the chart: BOOK NOW / WAIT / WATCH / NOT ENOUGH DATA, with range, sample, track record, expected change and downside.
+- Two small multiples: 90-day price history and days-to-departure curve. Never a dual-axis chart.
+- Fare rules: refundable, changeable, bag inclusion.
+- **Provider options:** a short comparison of eligible storefronts with net totals and Eligible / Listed / Ineligible status. Hidden unless a material, persistent gap exists. Each row links out; the purchase happens on the provider's site.
+- Alert threshold and “watch this route.”
+- Backtest note: “On this route, waiting beat buying in 6 of 10 similar cases.”
+- “What would change our mind”: one sentence.
 - Fare rules: refundable, changeable, bag inclusion.
 - **Provider options:** a short comparison of eligible storefronts with net totals and Eligible / Listed / Ineligible status. Hidden unless a material, persistent gap exists. Each row links out; the purchase happens on the provider's site.
 - Alert threshold and “watch this route.”
@@ -224,7 +249,14 @@ Fleet Atlas is not a travel agency, OTA or merchant of record. It does not sell,
 
 ### Mobile
 
-Bottom sheet with collapsed, half and full states. The globe stays full-bleed. Search, result selection and the recommendation must work one-handed.
+- Three detents: peek 88px, half 48dvh, full 92dvh.
+- The globe is fixed behind the sheet; do not put it inside a scrolling page.
+- The sheet header and drag handle move the sheet; the content scrolls.
+- Primary actions sit in the bottom 60% of the screen, sticky above the safe area.
+- 48×48dp targets; cards 72–88px tall; chips 40px with 8px gaps.
+- Do not use horizontal swipe between Results and When to buy; use tabs in the sheet header. A horizontal swipe on the globe is a rotate gesture.
+- Search on mobile is a summary chip (`BER → LIS · Mar 1–8 · 1 adult`) that opens a full-height search sheet.
+- The globe is not interactive when the sheet is full; pause rendering.
 
 ---
 
@@ -264,31 +296,44 @@ Timing is the product's main differentiator. It must be empirical and auditable,
 #### Output
 
 ```
-Recommendation: BUY
-Confidence: 78%
-Current: €89 (12th percentile of 90 days)
-Median: €151   p10: €84   p90: €220
-Expected in 7 days:  €92–€110
-Expected in 21 days: €120–€170
-Downside: 18% chance the fare falls below €80 if you wait
-Fare rules: non-refundable, 1 checked bag included
-Why: below the 10th percentile, fewer than half the seats left
-     at this fare, and this route rises sharply inside 21 days.
+Recommendation: BOOK NOW
+Current total: €119 (1 checked bag)
+Typical range: €110–€151 (middle 80% of fares paid, N=84)
+Position: below the 10th percentile
+Expected in 7 days:  €122–€140
+Expected in 21 days: €150–€210
+Downside: 18% chance it falls below €110 if you wait
+Fare rules: non-refundable; change €75 + fare difference
+Track record: when we said this on similar routes, it was right
+              7 times in 10 (n=214)
+Why: below the typical range, fewer than half the seats left at this
+     fare, and this route rises sharply inside 21 days.
+What would change our mind: a new sale bucket, a schedule change, or
+     a drop below €105 before Tuesday.
 ```
 
 #### Rules
 
-- Below p10 → default BUY, unless the fare rules are bad for the traveller's flexibility.
-- Between p10 and p50 → WATCH, with an alert at the p10.
-- Above p50 and more than 45 days out → WAIT, with a re-check date.
-- Inside 14 days → BUY or WATCH; do not promise a late drop.
-- Less than 14 observations or no comparable lead-time history → no advice. Say “collecting baseline.”
+- Below p10 → **Book now**, unless the fare rules are bad for the traveller's flexibility.
+- Between p10 and p50 → **Watch**, with an alert at the p10. Do not manufacture a verdict.
+- Above p50 and more than 45 days out → **Wait**, with a re-check date.
+- Inside 14 days → **Book now** or **Watch**; never promise a late drop.
+- Less than 14 observations or no comparable lead-time history → **Not enough data**. Say “collecting baseline.”
+- Enough data but a mixed signal → **No clear signal** and a watch. “Your call” is a valid answer.
 - Refundability changes the call: a slightly higher flexible fare can be the better buy.
 - Always show the total with bags and fees.
+- Never show a raw “confidence: 78%”. Show the range, the sample and the track record.
 
-#### Confidence
+#### Track record and uncertainty
 
-Confidence reflects sample size, dispersion and how well the current price fits the historical pattern. It is not a probability that the advice is correct. State that in the UI.
+A confidence number is easy to misread as a probability that the advice is right. Do not show one. Show:
+
+- the outcome in plain frequencies (“6 in 10 similar trips fell”),
+- the sample size and window,
+- the track record on this route or route class, including misses,
+- what would change the recommendation.
+
+If the track record is not available, say so. A product that only surfaces successes will be judged on its first visible failure.
 
 #### Backtest
 
@@ -296,7 +341,8 @@ For every route with enough history, replay the advice at 60, 30 and 14 days out
 
 - share of cases where waiting beat buying,
 - average saving or loss,
-- worst-case loss.
+- worst-case loss,
+- calibration: Brier score or a reliability diagram, with the misses shown.
 
 If the advice does not beat “buy now” after costs, the product should say so and position itself as search plus alerts.
 
@@ -359,17 +405,27 @@ type AppState = {
   };
   selection: {
     hoveredId: string | null;
-    selectedId: string | null;
+    focusedId: string | null;   // keyboard focus, ephemeral
+    selectedId: string | null;  // persistent, in URL
+  };
+  mode: 'search' | 'intel' | 'explore';
+  camera: {
+    lat: number;
+    lng: number;
+    altitude: number;
+    manualAt: number | null;    // last user-initiated pan/zoom
   };
 };
 ```
 
 Rules:
 
-- `hoveredId` never moves the camera.
-- `selectedId` frames the route and dims the rest.
+- `previewId = hoveredId ?? focusedId`. It styles the card and arc, but never changes `selectedId` or the camera.
+- `selectedId` calls `ensureVisible` only if the route is outside the safe area; it dims other arcs to 15%.
+- `mode: 'intel'` does not move the camera. The route is already framed.
+- Auto-fit is suppressed for 8 seconds after `camera.manualAt`; show a “Fit route” chip instead.
 - Changing a query invalidates results but keeps the old selection at 30% until the new search resolves.
-- URL state: `?from=BER&to=LIS&depart=2027-03-01&return=2027-03-08`. Shareable and reload-safe.
+- URL state: `?from=BER&to=LIS&depart=2027-03-01&return=2027-03-08&selected=...`. Shareable and reload-safe.
 
 ---
 
@@ -554,7 +610,7 @@ A visual language for volatility, derived entirely from history:
 
 Compute the coefficient of variation of the daily minimum, the frequency of meaningful drops, and the empirical 7-day range. Show the range, not a single prediction. The point is to make uncertainty legible.
 
-On the globe, colour routes by volatility; on the route page, show the band and the confidence. No “price will be €X” claims.
+On the globe, colour routes by volatility; on the route page, show the band, the sample size and the track record. No “price will be €X” claims.
 
 ### 10.3 Seasonality scrubber
 
@@ -797,7 +853,8 @@ type RouteSnapshot = {
   history: Array<{ date: string; price: number }>;
   curve: Array<{ daysOut: number; median: number; p10: number; p90: number }>;
   recommendation: 'buy' | 'wait' | 'watch' | 'insufficient';
-  confidence: number | null;
+  trackRecord: { correct: number; cases: number } | null;
+  sampleSize: number;
   expectedChange: { days: number; low: number; high: number } | null;
   backtest: { cases: number; waitWins: number; avgSaving: number; worstLoss: number } | null;
 };
@@ -858,11 +915,11 @@ fleet/
 
 | Phase | Build | Done when |
 |---|---|---|
-| **0 — Globe spike** (2–3 days) | React app, `react-globe.gl`, 1,000 airports, 500 arcs, hover/click, camera flight | 60fps on desktop and a mid-range phone; arcs clickable; no label clutter |
-| **1 — Search shell** (3–4 days) | Panel, combobox, date range, result cards, mock search, selection highlighting | A fixture route can be searched, hovered and selected |
+| **0 — List-first shell** (1 week) | Search, results, route strip, URL state, tokens, keyboard, price pills, status badges. No globe. | The full search-to-route-summary flow works with WebGL disabled; axe has zero critical issues; 20 cards scroll at 60fps |
+| **1 — Globe v0 + sync** (2–3 weeks) | Top 100 airports, selected route, HTML labels, camera fit with a safe rect, poster fallback; hover preview, click selection, arcs deduped by airport pair | 60fps on an M1 Air and 30fps on a mid-range Android; no label overlap at 12 labels; hover never moves the camera; WebGL failure shows the poster and list |
 | **2 — Air data** (5–7 days) | Rust API, places, route previews, SerpAPI adapter, cache, quota, verification | Real BER–LIS results with total price, bags and a verified timestamp |
 | **3 — History collection** (3–4 days) | Daily scheduler, `fare_history`, percentiles, route snapshot endpoint | A route accumulates daily minima and returns p10/p50/p90 |
-| **4 — Buy/wait + fare weather** (5–7 days) | Curve, recommendation rules, confidence, backtest, volatility band, route-intelligence panel | A recommendation is shown only with enough data; the backtest and the uncertainty band are visible |
+| **4 — Buy/wait + fare weather** (5–7 days) | Curve, recommendation rules, track record, backtest, volatility band, route-intelligence panel | A recommendation is shown only with enough data; the backtest, sample and uncertainty band are visible |
 | **5 — Point of sale** (4–6 days) | Eligibility profile, three-to-five storefront screening, net total, status labels, comparison table | A route shows an eligible storefront comparison, or explicitly says the home storefront is best |
 | **6 — Explore + climate** (4–5 days) | Home airport, cheap-destination feed, seasonality scrubber, climate overlay, destination cards | The globe shows cheap and pleasant destinations by month, with sample-size labels |
 | **7 — Airport access + reliability** (5–7 days) | Isochrones for the top 50 airports, transfer cost, on-time data for US routes, adjusted price | A cheap secondary airport is shown with its real door-to-door price and time |
@@ -890,12 +947,16 @@ The unique data layers in section 10 attach to phases 3–7. Do not build a visu
 
 ### Accessibility
 
-- The result list is the primary interface; the globe is an enhancement.
-- Keyboard: arrow keys through results, Enter selects, Esc clears, `/` focuses search.
-- `aria-live` for result counts and selection.
-- Reduced motion disables rotation, draw-on and pulsing.
-- Colour is never the only signal: selected arcs get a thicker stroke and a label.
-- A “list only” toggle for low-power devices.
+- The result list is the primary interface; the globe is `aria-hidden="true"` and not a control surface.
+- Every airport, arc, price and status has a list or table equivalent. The route strip is a definition list, not an image.
+- Keyboard: `/` focuses search; Up/Down moves focus between cards and previews the arc; Enter selects; Space opens detail; `i` opens “When to buy”; Esc clears.
+- `aria-live="polite"` for result counts, selection and price changes. Do not announce hover.
+- Charts: keyboard crosshair, `aria-live` value announcements, and a “View as table” toggle.
+- Reduced motion disables auto-rotation, camera flight, arc animation and selection rings.
+- Colour is never the only signal; price pills print the price and percentile; status badges carry an icon and text.
+- Focus ring 2px with 2px offset; focused content is never obscured by the sheet.
+- Targets: 48×48dp on mobile, 24×24px minimum on desktop.
+- A “list only” toggle for low-power devices and WebGL failure.
 
 ### Testing
 
@@ -912,16 +973,20 @@ The unique data layers in section 10 attach to phases 3–7. Do not build a visu
 
 | Risk | Mitigation |
 |---|---|
-| Advice is wrong or generic | Route-level history, confidence, backtest, and an explicit “insufficient data” state |
+| Advice is wrong or generic | Route-level history, range, sample size, track record, backtest, and an explicit “not enough data” state |
 | Cold start | Start 12 weeks early; seed priors from cached and quarterly sources; show watch pages; no advice under 14 observations |
 | Explore shows dead routes | Validate every candidate with a live search; show coverage counts; keep Explore inside the corridor until a current route source exists |
 | Vercel cannot host the data plane | Vercel for web; Rust API, scheduler and Obscura in a container. See [docs/15-hosting-on-vercel.md](docs/15-hosting-on-vercel.md) |
 | Search cost and latency | Cached results first, verify in background; paid calls only for the shortlist |
 | Price changes between display and click | Re-price, timestamp, and show “price changed” |
 | Google/Kayak/Hopper already do this | Differentiate on auditability, total cost and no dark patterns, not on a magic score |
-| Globe is a demo, not a tool | List-first results; globe supports discovery and route context; 2D toggle later |
+| Globe is a demo, not a tool | List-first results; globe is the lobby; flat route board below 1.35 R |
+| Globe is wrong for short routes | Crossfade to a flat route board; a globe shows one hemisphere and can hide the destination |
+| Auto-rotation causes motion sickness and label swim | No auto-rotation; user-controlled motion only; reduced-motion jump |
+| WebGL fails or is blocked | Static poster plus the list; “Reload globe”; never a dead canvas |
+| Colour-only price or status | Separate price, certainty and status channels; every value prints the price and percentile |
 | Stale route graph | Use live search or a current schedule source; limit Explore to the corridor until then |
-| Airport/label clutter | Cap labels and arcs by traffic; show more on zoom |
+| Airport/label clutter | HTML labels with budgets, collision tests and priority ranking; hide lower-priority labels |
 | Anti-meridian arcs | Split at ±180°; test long routes |
 | Scraping/ToS | Licensed sources only for displayed prices; no Google/Southwest/easyJet scraping |
 | POS feature becomes residency spoofing | Compare only storefronts the traveller is eligible for; no VPN, fake billing address or borrowed card |
@@ -951,6 +1016,7 @@ The unique data layers in section 10 attach to phases 3–7. Do not build a visu
 - **Point of sale:** licensed search plus official storefronts; eligibility-only, no spoofing.
 - **Reference data:** IANA time zones, ECB daily FX, Nager.Date holidays, first-party provider registry.
 - **Hosting:** Vercel for web and static dashboard; Rust API/scheduler/Obscura in a container with SQLite or Postgres.
+- **Globe:** the lobby, not the desk. List-first; flat route board below 1.35 R; no auto-rotation; no textures, stars or city lights.
 
 ### Still open
 
