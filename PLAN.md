@@ -151,7 +151,7 @@ The globe is the lobby, not the desk. It carries orientation, Explore and route 
 
 ### Rendering
 
-**v1: `react-globe.gl` for the globe, plus a flat route board for route scale.** The globe owns world and continent views; below a camera altitude of 1.35 R, crossfade to a flat route board. A globe shows one hemisphere, and at route scale the destination can sit behind the horizon.
+**v1: `react-globe.gl` for the globe, plus a flat route board for route scale.** The globe owns world and continent views; below a camera altitude of 1.35 R, crossfade to a flat route board. A globe shows one hemisphere, and at route scale the destination can sit behind the horizon. Prop map, data shapes and budgets: [docs/21-globe-implementation.md](docs/21-globe-implementation.md).
 
 **Alternative if one engine matters more than speed of build:** MapLibre GL JS globe + deck.gl, which gives globe/Mercator switching, DOM labels, collision and `fitBounds` in one stack. More integration work, fewer hand-rolled systems.
 

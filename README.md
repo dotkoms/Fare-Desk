@@ -25,6 +25,7 @@ A field manual for paying less for planes, trains and coaches — the data sourc
 | Design the interface | [UI/UX](docs/16-ui-ux.md) · [design system](docs/17-design-system.md) · [colour](docs/18-color.md) |
 | Add gamification without dark patterns | [docs/19-gamification.md](docs/19-gamification.md) |
 | Understand users and competitors | [docs/20-users-and-competitors.md](docs/20-users-and-competitors.md) |
+| Build the globe with react-globe.gl | [docs/21-globe-implementation.md](docs/21-globe-implementation.md) |
 | Decide what is an API and what needs a browser | [docs/12-rust-data-layer.md](docs/12-rust-data-layer.md) |
 | Check whether another storefront is cheaper | [docs/13-point-of-sale.md](docs/13-point-of-sale.md) |
 
@@ -59,7 +60,8 @@ fleet/
 │  ├─ 17-design-system.md          Type, layout, components, motion
 │  ├─ 18-color.md                  Palette, semantics, contrast
 │  ├─ 19-gamification.md           Ethical mechanics and metrics
-│  └─ 20-users-and-competitors.md  Beachhead, personas, competitive gap
+│  ├─ 20-users-and-competitors.md  Beachhead, personas, competitive gap
+│  └─ 21-globe-implementation.md   react-globe.gl props, data and budgets
 └─ agents/
    ├─ README.md                    How to install the fleet
    ├─ desk-ops.md
