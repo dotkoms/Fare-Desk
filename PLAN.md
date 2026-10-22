@@ -4,7 +4,7 @@ A 3D globe of airports and routes, a search console on the left, and a route pag
 
 **Scope:** flights only. Trains and coaches are future work, not v1.
 
-**Status:** plan only. No implementation yet.
+**Status:** Steps 1 and 2 of [22-build-planner.md](docs/22-build-planner.md) are built in `app/web` against demo fixtures — list-first shell and globe v0. No live data, no Rust data plane yet.
 
 ---
 
