@@ -1,6 +1,6 @@
 # Fare Desk
 
-**Repository:** `dotkoms/fleet` — the app is Fare Desk; the repo keeps its original name.
+**Repository:** `dotkoms/Fare-Desk`
 
 A field manual for paying less for planes, trains and coaches — the data sources that actually exist, which ones need an API and which need scraping, when to buy, what is live right now, and a multi-agent setup that watches it all.
 
