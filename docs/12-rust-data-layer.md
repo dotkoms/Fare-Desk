@@ -4,6 +4,8 @@
 
 **Scope note:** the app's v1 is **flights only**. Rail and coach entries stay in this document because the data-layer architecture is shared and they are the next expansion. See [../PLAN.md](../PLAN.md).
 
+**Built:** the `core`, `store`, `sources` and `api` crates exist in [`app/crates`](../app/crates) with `/api/places`, `/api/routes`, `/api/search`, `/api/reference/fx`, `/api/reference/holidays`, `/api/reference/providers`, `/api/data-card` and `/healthz`. Fixtures answer by default; SerpAPI is used when `SERPAPI_KEY` is set. Run and contract details: [app/README.md](../app/README.md).
+
 This keeps the whole backend — API clients, GTFS ingest, scraping, normalization, ranking, caching and quota — in one Rust workspace, with no Node or Python sidecar for rendering.
 
 ---

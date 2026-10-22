@@ -1,0 +1,119 @@
+{
+  "search_metadata": {
+    "id": "recorded-fixture",
+    "status": "Success",
+    "json_endpoint": "https://serpapi.com/searches/test"
+  },
+  "search_parameters": {
+    "engine": "google_flights",
+    "departure_id": "BER",
+    "arrival_id": "LIS",
+    "outbound_date": "2027-03-01",
+    "type": "2",
+    "travel_class": "1",
+    "currency": "EUR"
+  },
+  "best_flights": [
+    {
+      "flights": [
+        {
+          "departure_airport": {
+            "name": "Berlin Brandenburg Airport",
+            "id": "BER",
+            "time": "2027-03-01 07:10"
+          },
+          "arrival_airport": {
+            "name": "Lisbon Humberto Delgado Airport",
+            "id": "LIS",
+            "time": "2027-03-01 09:30"
+          },
+          "duration": 200,
+          "airplane": "Airbus A320",
+          "airline": "TAP Air Portugal",
+          "travel_class": "Economy",
+          "flight_number": "TP 1041",
+          "extensions": ["Checked baggage for a fee"]
+        }
+      ],
+      "total_duration": 200,
+      "price": 119,
+      "type": "One way",
+      "extensions": ["Checked baggage for a fee"]
+    }
+  ],
+  "other_flights": [
+    {
+      "flights": [
+        {
+          "departure_airport": {
+            "name": "Berlin Brandenburg Airport",
+            "id": "BER",
+            "time": "2027-03-01 12:20"
+          },
+          "arrival_airport": {
+            "name": "Lisbon Humberto Delgado Airport",
+            "id": "LIS",
+            "time": "2027-03-01 14:35"
+          },
+          "duration": 195,
+          "airplane": "Airbus A320neo",
+          "airline": "easyJet",
+          "travel_class": "Economy",
+          "flight_number": "U2 4501"
+        }
+      ],
+      "total_duration": 195,
+      "price": 149,
+      "type": "One way"
+    },
+    {
+      "flights": [
+        {
+          "departure_airport": {
+            "name": "Berlin Brandenburg Airport",
+            "id": "BER",
+            "time": "2027-03-01 07:00"
+          },
+          "arrival_airport": {
+            "name": "London Stansted Airport",
+            "id": "STN",
+            "time": "2027-03-01 07:45"
+          },
+          "duration": 105,
+          "airplane": "Boeing 737-800",
+          "airline": "Ryanair",
+          "travel_class": "Economy",
+          "flight_number": "FR 146"
+        },
+        {
+          "departure_airport": {
+            "name": "London Stansted Airport",
+            "id": "STN",
+            "time": "2027-03-01 09:15"
+          },
+          "arrival_airport": {
+            "name": "Lisbon Humberto Delgado Airport",
+            "id": "LIS",
+            "time": "2027-03-01 12:00"
+          },
+          "duration": 165,
+          "airplane": "Boeing 737-800",
+          "airline": "Ryanair",
+          "travel_class": "Economy",
+          "flight_number": "FR 1082"
+        }
+      ],
+      "layovers": [
+        {
+          "duration": 90,
+          "name": "London Stansted Airport",
+          "id": "STN"
+        }
+      ],
+      "total_duration": 360,
+      "price": 104,
+      "type": "One way",
+      "extensions": ["Self-transfer", "Checked baggage for a fee"]
+    }
+  ]
+}

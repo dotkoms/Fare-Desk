@@ -19,6 +19,7 @@ The project uses or plans to use the following components and datasets. Their li
 - **MapLibre GL JS** (if used) — BSD-3-Clause
 - **Natural Earth** — public domain
 - **OurAirports** — public domain
+- **mwgg/Airports** — MIT (IANA timezones used in `app/data/airports.json`)
 - **OpenFlights routes** (demo only) — ODbL 1.0; attribution and share-alike apply
 - **Open-Meteo** — CC BY 4.0
 - **US Bureau of Transportation Statistics** — public domain

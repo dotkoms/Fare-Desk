@@ -1,0 +1,21 @@
+[package]
+name = "faredesk-sources"
+description = "Fare sources and reference-data clients"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+chrono.workspace = true
+chrono-tz = "0.10"
+faredesk-core = { path = "../core" }
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+faredesk-store = { path = "../store" }
+tokio.workspace = true

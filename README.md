@@ -82,13 +82,24 @@ fleet/
 
 ## Run the app
 
+The web app and the data plane are separate; the web app still reads its bundled fixtures while Step 3 lands the API underneath.
+
 ```bash
+# data plane: places, fares, reference data
+cd app
+cargo run -p faredesk-api          # http://127.0.0.1:8080
+```
+
+```bash
+# web app
 cd app/web
 npm install
 npm run dev
 ```
 
-The first slice is the list-first shell with fixture data for BER–LIS, BER–LHR, BER–BCN and BER–JFK. No live prices, no globe, no booking yet.
+With no `SERPAPI_KEY`, the API answers from the bundled fixture set for BER–LIS, BER–LHR, BER–BCN and BER–JFK: a real search shape, a party- and bag-correct total, and provenance that says `fixture` rather than pretending otherwise. With a key it queries Google Flights through SerpAPI, caches for ten minutes, meters a daily quota and records the daily minimum in `fare_history`.
+
+Endpoints, provenance, cache and quota behaviour: [app/README.md](app/README.md).
 
 ## API or scrape?
 

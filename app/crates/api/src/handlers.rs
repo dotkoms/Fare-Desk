@@ -1,0 +1,876 @@
+use std::collections::HashMap;
+
+use axum::extract::{Query, State};
+use axum::http::StatusCode;
+use axum::Json;
+use chrono::{DateTime, Duration, NaiveDate, Utc};
+use serde::{Deserialize, Serialize};
+
+use faredesk_core::{
+    apply_scores, fingerprint, price_offer, sort_itineraries, Cabin, Coverage, DataCard, Dataset,
+    Freshness, FxResponse, Holiday, HolidaysResponse, Itinerary, Place, PlacesResponse, Provenance,
+    Provider, ProvidersResponse, RouteSummary, RoutesResponse, SearchQuery, SearchResponse,
+    SearchSnapshot, Sort,
+};
+use faredesk_sources::{fixtures, ResolvedQuery, SourceError};
+use faredesk_store::{Cached, QuotaOutcome};
+
+use crate::error::ApiError;
+use crate::AppState;
+
+// ---------------------------------------------------------------------------
+// Shared helpers
+// ---------------------------------------------------------------------------
+
+fn now() -> DateTime<Utc> {
+    Utc::now()
+}
+
+fn base_provenance(card_id: &str, source: &str, sample_size: usize) -> Provenance {
+    Provenance {
+        data_card_id: card_id.to_string(),
+        source: source.to_string(),
+        observed_at: now(),
+        freshness: Freshness::Bundled,
+        age_seconds: 0,
+        expires_at: None,
+        degraded: false,
+        degraded_reason: None,
+        sample_size,
+        notes: Vec::new(),
+    }
+}
+
+fn resolve_place(state: &AppState, value: &str) -> Result<Place, ApiError> {
+    state
+        .store()
+        .reference
+        .resolve(value)
+        .cloned()
+        .ok_or_else(|| {
+            ApiError::not_found(
+                "unknown_place",
+                format!("Unknown airport or place {value:?}. Try an IATA code such as BER."),
+            )
+        })
+}
+
+fn ttl_duration(ttl: std::time::Duration) -> Duration {
+    Duration::from_std(ttl).unwrap_or_else(|_| Duration::zero())
+}
+
+// ---------------------------------------------------------------------------
+// Health
+// ---------------------------------------------------------------------------
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SourceHealth {
+    pub id: &'static str,
+    pub configured: bool,
+    pub live: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub daily_limit: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub used_today: Option<u32>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Health {
+    pub status: &'static str,
+    pub version: &'static str,
+    pub started_at: DateTime<Utc>,
+    pub uptime_seconds: i64,
+    pub places: usize,
+    pub cache_entries: usize,
+    pub sources: Vec<SourceHealth>,
+}
+
+pub async fn health(State(state): State<AppState>) -> Json<Health> {
+    let today = now().date_naive();
+    let config = state.config();
+    let serpapi_used = state
+        .serpapi()
+        .and_then(|_| state.store().db.quota_used("serpapi", today).ok());
+
+    Json(Health {
+        status: "ok",
+        version: env!("CARGO_PKG_VERSION"),
+        started_at: state.started_at(),
+        uptime_seconds: (now() - state.started_at()).num_seconds(),
+        places: state.store().reference.len(),
+        cache_entries: state.store().cache_len(),
+        sources: vec![
+            SourceHealth {
+                id: "fixtures",
+                configured: true,
+                live: false,
+                daily_limit: None,
+                used_today: None,
+            },
+            SourceHealth {
+                id: "serpapi",
+                configured: state.serpapi().is_some(),
+                live: true,
+                daily_limit: state.serpapi().map(|_| config.serpapi_daily_limit),
+                used_today: serpapi_used,
+            },
+        ],
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Places
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct PlacesParams {
+    pub q: Option<String>,
+    pub limit: Option<usize>,
+}
+
+pub async fn places(
+    State(state): State<AppState>,
+    Query(params): Query<PlacesParams>,
+) -> Result<Json<PlacesResponse>, ApiError> {
+    let query = params.q.unwrap_or_default();
+    if query.trim().len() < 2 {
+        return Err(ApiError::bad_request(
+            "missing_query",
+            "Give at least two characters, e.g. /api/places?q=lis.",
+        ));
+    }
+    let limit = params.limit.unwrap_or(8).clamp(1, 25);
+    let results = state.store().reference.search(&query, limit);
+
+    let mut provenance = base_provenance("airports-reference", "reference", results.len());
+    provenance.observed_at = state.store().reference.generated_at();
+    provenance.age_seconds = (now() - state.store().reference.generated_at())
+        .num_seconds()
+        .max(0) as u64;
+    provenance.notes = vec![format!(
+        "{} airports in the reference set; searches cover IATA code, city, airport name and country.",
+        state.store().reference.len()
+    )];
+
+    Ok(Json(PlacesResponse {
+        places: results,
+        provenance,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Routes
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct RoutesParams {
+    pub origin: Option<String>,
+    pub limit: Option<usize>,
+}
+
+pub async fn routes(
+    State(state): State<AppState>,
+    Query(params): Query<RoutesParams>,
+) -> Result<Json<RoutesResponse>, ApiError> {
+    let origin_value = params.origin.unwrap_or_default();
+    if origin_value.trim().is_empty() {
+        return Err(ApiError::bad_request(
+            "missing_origin",
+            "Give an origin airport, e.g. /api/routes?origin=BER.",
+        ));
+    }
+    let origin = resolve_place(&state, &origin_value)?;
+    let limit = params.limit.unwrap_or(20).clamp(1, 100);
+
+    let live = state.serpapi().is_some();
+    let coverage = if live {
+        Coverage::Live
+    } else {
+        Coverage::Fixture
+    };
+
+    let mut summaries: Vec<RouteSummary> = fixtures::known_routes()
+        .into_iter()
+        .filter(|(from, _)| from.eq_ignore_ascii_case(&origin.code))
+        .filter_map(|(_, to)| state.store().reference.by_code(to).cloned())
+        .map(|destination| RouteSummary {
+            origin: origin.clone(),
+            destination,
+            coverage,
+            last_observed_at: None,
+        })
+        .collect();
+    summaries.sort_by(|a, b| a.destination.code.cmp(&b.destination.code));
+    summaries.truncate(limit);
+
+    let mut provenance = base_provenance("route-coverage", "registry", summaries.len());
+    provenance.notes = vec![if live {
+        "A live source is configured; route coverage still reflects the demo graph.".to_string()
+    } else {
+        "No live source is configured; routes come from the demo fixture graph.".to_string()
+    }];
+    if summaries.is_empty() {
+        provenance
+            .notes
+            .push(format!("No route data for {} yet.", origin.code));
+    }
+
+    Ok(Json(RoutesResponse {
+        routes: summaries,
+        provenance,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Search
+// ---------------------------------------------------------------------------
+
+fn one() -> u8 {
+    1
+}
+
+fn eur() -> String {
+    "EUR".to_string()
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchBody {
+    pub origin: String,
+    pub destination: String,
+    pub depart_date: NaiveDate,
+    #[serde(default)]
+    pub return_date: Option<NaiveDate>,
+    #[serde(default = "one")]
+    pub adults: u8,
+    #[serde(default)]
+    pub children: u8,
+    #[serde(default)]
+    pub checked_bags: u8,
+    #[serde(default = "one")]
+    pub carry_on_bags: u8,
+    #[serde(default = "eur")]
+    pub currency: String,
+    #[serde(default)]
+    pub cabin: Cabin,
+    #[serde(default)]
+    pub max_stops: Option<u8>,
+    #[serde(default)]
+    pub sort: Sort,
+    #[serde(default)]
+    pub source: Option<String>,
+}
+
+impl SearchBody {
+    fn validated(self) -> Result<SearchQuery, ApiError> {
+        if !(1..=9).contains(&self.adults) {
+            return Err(ApiError::bad_request(
+                "invalid_party",
+                "adults must be between 1 and 9.",
+            ));
+        }
+        if self.children > 8 {
+            return Err(ApiError::bad_request(
+                "invalid_party",
+                "children must be 8 or fewer.",
+            ));
+        }
+        if self.checked_bags > 5 || self.carry_on_bags > 4 {
+            return Err(ApiError::bad_request(
+                "invalid_bags",
+                "At most 5 checked bags and 4 carry-on bags per traveller.",
+            ));
+        }
+        if self.max_stops.is_some_and(|stops| stops > 3) {
+            return Err(ApiError::bad_request(
+                "invalid_stops",
+                "maxStops must be 3 or fewer.",
+            ));
+        }
+
+        let today = now().date_naive();
+        if self.depart_date < today {
+            return Err(ApiError::bad_request(
+                "date_in_past",
+                "The departure date has already passed.",
+            ));
+        }
+        if self.depart_date > today + Duration::days(730) {
+            return Err(ApiError::bad_request(
+                "date_too_far",
+                "Schedules are only searched up to two years ahead.",
+            ));
+        }
+        if let Some(return_date) = self.return_date {
+            if return_date < self.depart_date {
+                return Err(ApiError::bad_request(
+                    "invalid_dates",
+                    "The return date is before the departure date.",
+                ));
+            }
+        }
+
+        let currency = self.currency.trim().to_uppercase();
+        if currency.len() != 3
+            || !currency
+                .chars()
+                .all(|character| character.is_ascii_alphabetic())
+        {
+            return Err(ApiError::bad_request(
+                "invalid_currency",
+                "currency must be a three-letter ISO code, e.g. EUR.",
+            ));
+        }
+
+        Ok(SearchQuery {
+            origin: self.origin.trim().to_uppercase(),
+            destination: self.destination.trim().to_uppercase(),
+            depart_date: self.depart_date,
+            return_date: self.return_date,
+            adults: self.adults,
+            children: self.children,
+            checked_bags: self.checked_bags,
+            carry_on_bags: self.carry_on_bags,
+            currency,
+            cabin: self.cabin,
+            max_stops: self.max_stops,
+            sort: self.sort,
+        })
+    }
+}
+
+pub async fn search(
+    State(state): State<AppState>,
+    Json(body): Json<SearchBody>,
+) -> Result<Json<SearchResponse>, ApiError> {
+    let requested_source = body.source.clone();
+    let query = body.validated()?;
+    let origin = resolve_place(&state, &query.origin)?;
+    let destination = resolve_place(&state, &query.destination)?;
+    if origin.code == destination.code {
+        return Err(ApiError::bad_request(
+            "same_place",
+            "Origin and destination are the same airport.",
+        ));
+    }
+
+    let source = state.source(requested_source.as_deref())?;
+    let live = source.is_live();
+
+    if live && query.return_date.is_some() {
+        return Err(ApiError::bad_request(
+            "return_trip_not_supported",
+            "The live source prices one direction at a time in this release. Search each leg separately, or use source=fixtures for the demo round trip.",
+        ));
+    }
+    if !live && query.currency != "EUR" {
+        return Err(ApiError::bad_request(
+            "unsupported_currency",
+            "Fixtures are priced in EUR. A live source can quote another currency.",
+        ));
+    }
+
+    let route = format!("{}-{}", origin.code, destination.code);
+    let key = crate::search_cache_key(source.id(), &query, &origin.code, &destination.code);
+
+    if let Some(cached) = state.store().search_cache.get(&key) {
+        return Ok(Json(response_from_snapshot(
+            &query,
+            &route,
+            cached,
+            source.data_card_id(),
+            source.id(),
+            Freshness::Cached,
+            None,
+        )));
+    }
+
+    if live {
+        let today = now().date_naive();
+        match state
+            .store()
+            .db
+            .consume_quota(source.id(), today, state.config().serpapi_daily_limit)
+        {
+            Ok(QuotaOutcome::Granted { .. }) => {}
+            Ok(QuotaOutcome::Exhausted { reset_on, .. }) => {
+                if let Some(stale) = state.store().search_cache.get_stale(&key) {
+                    return Ok(Json(response_from_snapshot(
+                        &query,
+                        &route,
+                        stale,
+                        source.data_card_id(),
+                        source.id(),
+                        Freshness::Stale,
+                        Some(
+                            "The daily source quota is spent; showing the last good result.".into(),
+                        ),
+                    )));
+                }
+                return Err(ApiError::quota_exhausted(
+                    "The daily source quota is spent. Try again tomorrow, or ask for source=fixtures.",
+                    reset_on.format("%Y-%m-%d").to_string(),
+                ));
+            }
+            Err(error) => {
+                return Err(ApiError::internal(format!("quota ledger: {error}")));
+            }
+        }
+    }
+
+    let resolved = ResolvedQuery {
+        request: &query,
+        origin: &origin,
+        destination: &destination,
+    };
+
+    let offers = match source.search(&resolved).await {
+        Ok(offers) => offers,
+        Err(error) => {
+            if let Some(stale) = state.store().search_cache.get_stale(&key) {
+                return Ok(Json(response_from_snapshot(
+                    &query,
+                    &route,
+                    stale,
+                    source.data_card_id(),
+                    source.id(),
+                    Freshness::Stale,
+                    Some(format!(
+                        "The live source failed ({error}); showing the last good result."
+                    )),
+                )));
+            }
+            return Err(match error {
+                SourceError::InvalidRequest(message) => {
+                    ApiError::bad_request("source_rejected", message)
+                }
+                SourceError::NotConfigured(message) => {
+                    ApiError::bad_request("source_not_configured", message)
+                }
+                SourceError::Unavailable(message) => ApiError::unavailable(message),
+                SourceError::Parse(message) => {
+                    ApiError::new(StatusCode::BAD_GATEWAY, "source_bad_response", message)
+                }
+            });
+        }
+    };
+
+    let (itineraries, dropped) = build_itineraries(offers, &query);
+
+    if live {
+        let today = now().date_naive();
+        for itinerary in &itineraries {
+            let _ = state.store().db.record_observation(
+                &route,
+                query.depart_date,
+                today,
+                itinerary.total_price,
+                &itinerary.currency,
+                source.id(),
+                &itinerary.id,
+            );
+        }
+    }
+
+    let notes = notes_for(&query, live, dropped, &itineraries);
+    let observed_at = now();
+    let ttl = state.config().search_cache_ttl;
+    let snapshot = SearchSnapshot {
+        itineraries: itineraries.clone(),
+        source: source.id().to_string(),
+        observed_at,
+        sample_size: itineraries.len(),
+        notes: notes.clone(),
+    };
+    state.store().search_cache.insert(key, snapshot, ttl);
+
+    let mut provenance = base_provenance(source.data_card_id(), source.id(), itineraries.len());
+    provenance.freshness = if live {
+        Freshness::Live
+    } else {
+        Freshness::Fixture
+    };
+    provenance.observed_at = observed_at;
+    provenance.expires_at = Some(observed_at + ttl_duration(ttl));
+    provenance.notes = notes;
+
+    Ok(Json(SearchResponse {
+        query,
+        route,
+        itineraries,
+        provenance,
+    }))
+}
+
+fn response_from_snapshot(
+    query: &SearchQuery,
+    route: &str,
+    cached: Cached<SearchSnapshot>,
+    card_id: &str,
+    source_id: &str,
+    freshness: Freshness,
+    degraded_reason: Option<String>,
+) -> SearchResponse {
+    let mut provenance = base_provenance(card_id, source_id, cached.value.sample_size);
+    provenance.freshness = freshness;
+    provenance.observed_at = cached.value.observed_at;
+    provenance.age_seconds = (now() - cached.value.observed_at).num_seconds().max(0) as u64;
+    provenance.expires_at = Some(cached.expires_at);
+    provenance.degraded = degraded_reason.is_some();
+    provenance.degraded_reason = degraded_reason;
+    provenance.notes = cached.value.notes.clone();
+
+    SearchResponse {
+        query: query.clone(),
+        route: route.to_string(),
+        itineraries: cached.value.itineraries,
+        provenance,
+    }
+}
+
+fn build_itineraries(
+    offers: Vec<faredesk_core::Offer>,
+    query: &SearchQuery,
+) -> (Vec<Itinerary>, usize) {
+    let mut merged: HashMap<String, Itinerary> = HashMap::new();
+    let mut dropped = 0;
+
+    for offer in offers {
+        let id = fingerprint(&offer.segments);
+        let (total, breakdown) = price_offer(&offer, query);
+        let duration = offer.duration_minutes();
+        let stops = offer.stops();
+        let itinerary = Itinerary {
+            id: id.clone(),
+            segments: offer.segments,
+            total_price: total,
+            currency: offer.currency,
+            total_duration_minutes: duration,
+            stops,
+            fare_family: offer.fare_family,
+            bags_included: offer.bags_included,
+            fare_rules: offer.fare_rules,
+            provider_url: offer.provider_url,
+            provider_name: offer.provider_name,
+            source: offer.source,
+            verified_at: offer.verified_at,
+            risk: offer.risk,
+            price_breakdown: breakdown,
+            score: None,
+        };
+
+        match merged.get(&id) {
+            Some(existing) if existing.total_price <= total => {
+                dropped += 1;
+            }
+            Some(_) => {
+                dropped += 1;
+                merged.insert(id, itinerary);
+            }
+            None => {
+                merged.insert(id, itinerary);
+            }
+        }
+    }
+
+    let mut itineraries: Vec<Itinerary> = merged.into_values().collect();
+    apply_scores(&mut itineraries);
+    sort_itineraries(&mut itineraries, query.sort);
+    (itineraries, dropped)
+}
+
+fn notes_for(
+    query: &SearchQuery,
+    live: bool,
+    dropped: usize,
+    itineraries: &[Itinerary],
+) -> Vec<String> {
+    let mut notes = Vec::new();
+    if !live {
+        notes.push("Demo fixture prices; they do not vary with the date.".to_string());
+    }
+    if query.return_date.is_some() {
+        notes.push(
+            "Return leg is priced separately in this release; totals cover one direction."
+                .to_string(),
+        );
+    }
+    if query.children > 0 {
+        notes.push("Children are priced at the adult fare in this release.".to_string());
+    }
+    if dropped > 0 {
+        notes.push(format!(
+            "{dropped} duplicate service{} merged, keeping the lowest total.",
+            if dropped == 1 { " was" } else { "s were" }
+        ));
+    }
+    if itineraries
+        .iter()
+        .any(|itinerary| itinerary.price_breakdown.bag_fee_estimated)
+    {
+        notes.push(
+            "At least one checked-bag fee is a Fare Desk estimate because the source did not name the amount."
+                .to_string(),
+        );
+    }
+    notes
+}
+
+// ---------------------------------------------------------------------------
+// Reference data
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct FxParams {
+    pub base: Option<String>,
+    pub quote: Option<String>,
+}
+
+pub async fn fx(
+    State(state): State<AppState>,
+    Query(params): Query<FxParams>,
+) -> Result<Json<FxResponse>, ApiError> {
+    let base = params
+        .base
+        .unwrap_or_else(|| "EUR".into())
+        .trim()
+        .to_uppercase();
+    let quote = params
+        .quote
+        .unwrap_or_else(|| "USD".into())
+        .trim()
+        .to_uppercase();
+    for code in [&base, &quote] {
+        if code.len() != 3
+            || !code
+                .chars()
+                .all(|character| character.is_ascii_alphabetic())
+        {
+            return Err(ApiError::bad_request(
+                "invalid_currency",
+                "base and quote must be three-letter ISO codes.",
+            ));
+        }
+    }
+
+    let key = format!("fx:{base}:{quote}");
+    if let Some(cached) = state.store().fx_cache.get(&key) {
+        let mut provenance = base_provenance("fx-frankfurter", &cached.value.source, 1);
+        provenance.freshness = Freshness::Cached;
+        provenance.age_seconds = (now() - cached.stored_at).num_seconds().max(0) as u64;
+        provenance.expires_at = Some(cached.expires_at);
+        return Ok(Json(FxResponse {
+            rate: cached.value,
+            provenance,
+        }));
+    }
+
+    let result = state.reference_client().fx_rate(&base, &quote).await;
+    let ttl = state.config().reference_cache_ttl;
+
+    match result {
+        Ok(rate) => {
+            state.store().fx_cache.insert(key, rate.clone(), ttl);
+            let mut provenance = base_provenance("fx-frankfurter", &rate.source, 1);
+            provenance.freshness = Freshness::Live;
+            provenance.expires_at = Some(now() + ttl_duration(ttl));
+            Ok(Json(FxResponse { rate, provenance }))
+        }
+        Err(error) => {
+            if let Some(rate) = faredesk_sources::reference_data::fallback_fx(&base, &quote) {
+                let mut provenance = base_provenance("fx-frankfurter", &rate.source, 1);
+                provenance.degraded = true;
+                provenance.degraded_reason = Some(format!(
+                    "Live ECB rates are unavailable ({error}); using the bundled snapshot."
+                ));
+                return Ok(Json(FxResponse { rate, provenance }));
+            }
+            Err(ApiError::unavailable(format!(
+                "No FX rate for {base}/{quote}: {error}"
+            )))
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct HolidaysParams {
+    pub country: Option<String>,
+    pub year: Option<i32>,
+}
+
+pub async fn holidays(
+    State(state): State<AppState>,
+    Query(params): Query<HolidaysParams>,
+) -> Result<Json<HolidaysResponse>, ApiError> {
+    let country = params.country.unwrap_or_default().trim().to_uppercase();
+    if country.len() != 2
+        || !country
+            .chars()
+            .all(|character| character.is_ascii_alphabetic())
+    {
+        return Err(ApiError::bad_request(
+            "invalid_country",
+            "country must be a two-letter ISO code, e.g. DE.",
+        ));
+    }
+    let year = params.year.unwrap_or_else(|| {
+        now()
+            .date_naive()
+            .format("%Y")
+            .to_string()
+            .parse()
+            .unwrap_or(2026)
+    });
+    if !(2020..=2100).contains(&year) {
+        return Err(ApiError::bad_request(
+            "invalid_year",
+            "year must be between 2020 and 2100.",
+        ));
+    }
+
+    let key = format!("holidays:{country}:{year}");
+    if let Some(cached) = state.store().holidays_cache.get(&key) {
+        let mut provenance = base_provenance("holidays-nager", "Nager.Date", cached.value.len());
+        provenance.freshness = Freshness::Cached;
+        provenance.age_seconds = (now() - cached.stored_at).num_seconds().max(0) as u64;
+        provenance.expires_at = Some(cached.expires_at);
+        return Ok(Json(HolidaysResponse {
+            holidays: cached.value,
+            provenance,
+        }));
+    }
+
+    let ttl = state.config().reference_cache_ttl;
+    match state.reference_client().holidays(&country, year).await {
+        Ok(holidays) => {
+            state
+                .store()
+                .holidays_cache
+                .insert(key, holidays.clone(), ttl);
+            let mut provenance = base_provenance("holidays-nager", "Nager.Date", holidays.len());
+            provenance.freshness = Freshness::Live;
+            provenance.expires_at = Some(now() + ttl_duration(ttl));
+            Ok(Json(HolidaysResponse {
+                holidays,
+                provenance,
+            }))
+        }
+        Err(error) => {
+            if let Some(stale) = state.store().holidays_cache.get_stale(&key) {
+                let mut provenance =
+                    base_provenance("holidays-nager", "Nager.Date", stale.value.len());
+                provenance.freshness = Freshness::Stale;
+                provenance.age_seconds = (now() - stale.stored_at).num_seconds().max(0) as u64;
+                provenance.degraded = true;
+                provenance.degraded_reason = Some(format!(
+                    "Public holidays could not be refreshed ({error}); showing the last good list."
+                ));
+                return Ok(Json(HolidaysResponse {
+                    holidays: stale.value,
+                    provenance,
+                }));
+            }
+            let mut provenance = base_provenance("holidays-nager", "Nager.Date", 0);
+            provenance.degraded = true;
+            provenance.degraded_reason = Some(format!(
+                "Public holidays are unavailable ({error}). The rest of the response is unaffected."
+            ));
+            Ok(Json(HolidaysResponse {
+                holidays: Vec::<Holiday>::new(),
+                provenance,
+            }))
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ProvidersParams {
+    pub airport: Option<String>,
+}
+
+pub async fn providers(
+    State(state): State<AppState>,
+    Query(params): Query<ProvidersParams>,
+) -> Result<Json<ProvidersResponse>, ApiError> {
+    let providers: Vec<Provider> = state.store().providers.clone();
+    let mut provenance = base_provenance("providers-registry", "registry", providers.len());
+
+    if let Some(airport) = params
+        .airport
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        let place = resolve_place(&state, airport)?;
+        provenance.notes = vec![format!(
+            "The registry is global; airline schedules are not joined to {} yet, so every provider is listed.",
+            place.code
+        )];
+    }
+
+    Ok(Json(ProvidersResponse {
+        providers,
+        provenance,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DataCardParams {
+    pub dataset: Option<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DataCardsResponse {
+    pub cards: Vec<DataCard>,
+    pub provenance: Provenance,
+}
+
+pub async fn data_cards(
+    State(state): State<AppState>,
+    Query(params): Query<DataCardParams>,
+) -> Result<Json<DataCardsResponse>, ApiError> {
+    let dataset = match params.dataset.as_deref().map(str::trim).filter(|value| !value.is_empty()) {
+        None => None,
+        Some(value) => Some(parse_dataset(value).ok_or_else(|| {
+            ApiError::bad_request(
+                "unknown_dataset",
+                format!("Unknown dataset {value:?}. Use fares, airports, routes, fx, holidays, providers, history or meta."),
+            )
+        })?),
+    };
+
+    let cards: Vec<DataCard> = match dataset {
+        Some(dataset) => state
+            .store()
+            .cards()
+            .iter()
+            .filter(|card| card.dataset == dataset)
+            .cloned()
+            .collect(),
+        None => state.store().cards().to_vec(),
+    };
+
+    let mut provenance = base_provenance("data-cards-registry", "registry", cards.len());
+    provenance.notes = vec![
+        "Every data endpoint returns one of these ids so the source, licence and method can be audited."
+            .to_string(),
+    ];
+
+    Ok(Json(DataCardsResponse { cards, provenance }))
+}
+
+fn parse_dataset(value: &str) -> Option<Dataset> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "fares" => Some(Dataset::Fares),
+        "airports" => Some(Dataset::Airports),
+        "routes" => Some(Dataset::Routes),
+        "fx" => Some(Dataset::Fx),
+        "holidays" => Some(Dataset::Holidays),
+        "providers" => Some(Dataset::Providers),
+        "history" => Some(Dataset::History),
+        "meta" => Some(Dataset::Meta),
+        _ => None,
+    }
+}

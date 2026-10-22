@@ -7,3 +7,10 @@ data/verified/
 
 # OS noise
 .DS_Store
+
+# Rust build output and runtime ledgers
+app/target/
+app/.env
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal

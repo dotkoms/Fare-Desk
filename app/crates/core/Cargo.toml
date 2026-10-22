@@ -1,0 +1,15 @@
+[package]
+name = "faredesk-core"
+description = "Fare Desk contract types, pricing and ranking"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+chrono.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

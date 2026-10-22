@@ -10,7 +10,7 @@ The following are proprietary to the project owner and are **not** licensed unde
 - Point-of-sale quotes, eligibility results and provider comparisons.
 - The True Fare database of ancillary fees.
 - Airport-access, transfer-time and minimum-connection data curated by the project.
-- The provider registry, API keys, rate-limit budgets and operational configuration.
+- The operational provider registry (affiliate terms, payment rails, eligibility rules), API keys, rate-limit budgets and operational configuration. The public deep-link list in `app/data/providers.json` is GPL-3.0 and is not part of this boundary.
 - Hosted-service data, logs, accounts, alerts and usage records.
 - Any dataset explicitly marked “proprietary” in its data card.
 
@@ -25,6 +25,7 @@ Some datasets may be published as open data with their own licence and data card
 Third-party datasets keep their own licences:
 
 - **OurAirports** — public domain.
+- **mwgg/Airports** — MIT; IANA timezones in `app/data/airports.json`.
 - **Natural Earth** — public domain.
 - **OpenFlights routes** — ODbL 1.0; attribution and share-alike apply. Demo use only.
 - **Open-Meteo** — CC BY 4.0.

@@ -1,0 +1,112 @@
+[
+  {
+    "id": "tap",
+    "name": "TAP Air Portugal",
+    "kind": "airline",
+    "country": "PT",
+    "currencies": ["EUR", "USD", "GBP"],
+    "paymentMethods": ["card"],
+    "deepLinkTemplate": "https://www.flytap.com/en-de/booking?origin={origin}&destination={destination}&date={date}",
+    "affiliate": false
+  },
+  {
+    "id": "lufthansa",
+    "name": "Lufthansa",
+    "kind": "airline",
+    "country": "DE",
+    "currencies": ["EUR", "USD", "GBP"],
+    "paymentMethods": ["card", "paypal"],
+    "deepLinkTemplate": "https://www.lufthansa.com/de/en/homepage",
+    "affiliate": false
+  },
+  {
+    "id": "ryanair",
+    "name": "Ryanair",
+    "kind": "airline",
+    "country": "IE",
+    "currencies": ["EUR", "GBP", "PLN"],
+    "paymentMethods": ["card"],
+    "deepLinkTemplate": "https://www.ryanair.com/gb/en/trip/flights/select?adults={adults}&dateOut={date}&originIata={origin}&destinationIata={destination}",
+    "affiliate": false
+  },
+  {
+    "id": "easyjet",
+    "name": "easyJet",
+    "kind": "airline",
+    "country": "GB",
+    "currencies": ["EUR", "GBP", "CHF"],
+    "paymentMethods": ["card", "paypal"],
+    "deepLinkTemplate": "https://www.easyjet.com/en",
+    "affiliate": false
+  },
+  {
+    "id": "iberia",
+    "name": "Iberia",
+    "kind": "airline",
+    "country": "ES",
+    "currencies": ["EUR", "USD"],
+    "paymentMethods": ["card"],
+    "deepLinkTemplate": "https://www.iberia.com/",
+    "affiliate": false
+  },
+  {
+    "id": "ita",
+    "name": "ITA Airways",
+    "kind": "airline",
+    "country": "IT",
+    "currencies": ["EUR", "USD"],
+    "paymentMethods": ["card"],
+    "deepLinkTemplate": "https://www.ita-airways.com/",
+    "affiliate": false
+  },
+  {
+    "id": "british-airways",
+    "name": "British Airways",
+    "kind": "airline",
+    "country": "GB",
+    "currencies": ["GBP", "EUR", "USD"],
+    "paymentMethods": ["card", "paypal"],
+    "deepLinkTemplate": "https://www.britishairways.com/travel/home/public/en_gb/",
+    "affiliate": false
+  },
+  {
+    "id": "klm",
+    "name": "KLM",
+    "kind": "airline",
+    "country": "NL",
+    "currencies": ["EUR", "USD", "GBP"],
+    "paymentMethods": ["card", "paypal"],
+    "deepLinkTemplate": "https://www.klm.com/",
+    "affiliate": false
+  },
+  {
+    "id": "air-france",
+    "name": "Air France",
+    "kind": "airline",
+    "country": "FR",
+    "currencies": ["EUR", "USD", "GBP"],
+    "paymentMethods": ["card", "paypal"],
+    "deepLinkTemplate": "https://www.airfrance.com/",
+    "affiliate": false
+  },
+  {
+    "id": "vueling",
+    "name": "Vueling",
+    "kind": "airline",
+    "country": "ES",
+    "currencies": ["EUR", "GBP"],
+    "paymentMethods": ["card"],
+    "deepLinkTemplate": "https://www.vueling.com/",
+    "affiliate": false
+  },
+  {
+    "id": "google-flights",
+    "name": "Google Flights",
+    "kind": "ota",
+    "country": "US",
+    "currencies": ["EUR", "USD", "GBP"],
+    "paymentMethods": [],
+    "deepLinkTemplate": "https://www.google.com/travel/flights?q=Flights%20from%20{origin}%20to%20{destination}%20on%20{date}",
+    "affiliate": false
+  }
+]

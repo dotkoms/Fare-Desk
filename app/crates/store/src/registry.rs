@@ -1,0 +1,172 @@
+use chrono::{DateTime, Utc};
+use faredesk_core::{DataCard, Dataset, Provider};
+
+const PROVIDERS_JSON: &str = include_str!("../../../data/providers.json");
+
+#[derive(Debug, thiserror::Error)]
+pub enum RegistryError {
+    #[error("provider registry is not valid JSON: {0}")]
+    Json(#[from] serde_json::Error),
+}
+
+pub fn load_providers() -> Result<Vec<Provider>, RegistryError> {
+    Ok(serde_json::from_str(PROVIDERS_JSON)?)
+}
+
+pub fn provider_for_name<'a>(providers: &'a [Provider], name: &str) -> Option<&'a Provider> {
+    providers
+        .iter()
+        .find(|provider| provider.name.eq_ignore_ascii_case(name))
+}
+
+fn card(
+    id: &str,
+    dataset: Dataset,
+    source: &str,
+    licence: &str,
+    method: &str,
+    updated_at: DateTime<Utc>,
+    notes: &[&str],
+) -> DataCard {
+    DataCard {
+        id: id.to_string(),
+        dataset,
+        source: source.to_string(),
+        licence: licence.to_string(),
+        method: method.to_string(),
+        updated_at,
+        notes: notes.iter().map(|note| note.to_string()).collect(),
+    }
+}
+
+/// Every dataset a client can see, with the method and licence behind it.
+pub fn data_cards(airports_updated_at: DateTime<Utc>, airports_source: String) -> Vec<DataCard> {
+    let release = DateTime::parse_from_rfc3339("2026-10-22T00:00:00Z")
+        .expect("valid release date")
+        .with_timezone(&Utc);
+    vec![
+        card(
+            "airports-reference",
+            Dataset::Airports,
+            "OurAirports + mwgg/Airports",
+            "Public domain + MIT",
+            "Large and medium airports with scheduled service. IANA timezones joined by ICAO, then IATA. Airport coordinates come from OurAirports.",
+            airports_updated_at,
+            &[
+                airports_source.as_str(),
+                "Airports without a timezone are omitted rather than guessed.",
+            ],
+        ),
+        card(
+            "fares-fixture",
+            Dataset::Fares,
+            "Bundled fixture set",
+            "GPL-3.0-or-later",
+            "Deterministic demo offers generated from the route, date and party. Not real inventory and never presented as live.",
+            release,
+            &["Used when no live source key is configured."],
+        ),
+        card(
+            "fares-serpapi",
+            Dataset::Fares,
+            "SerpAPI Google Flights",
+            "SerpAPI terms of service",
+            "Live Google Flights results via SerpAPI, mapped to the itinerary contract. Prices are per traveller before bag add-ons and are confirmed at fetch time.",
+            release,
+            &[
+                "Google is never scraped directly.",
+                "The app redirects to the provider; it does not book.",
+                "Bag fees that the source reports only as 'for a fee' use the curated estimate table and are marked estimated.",
+            ],
+        ),
+        card(
+            "route-coverage",
+            Dataset::Routes,
+            "First-party route graph",
+            "GPL-3.0-or-later",
+            "Origin-destination pairs the demo fixtures cover, plus whether a live fare source is configured. Coverage is a configuration fact, not a price observation.",
+            release,
+            &["Live coverage means the source is configured, not that a route was searched."],
+        ),
+        card(
+            "fx-frankfurter",
+            Dataset::Fx,
+            "Frankfurter (ECB reference rates)",
+            "ECB terms of use",
+            "Daily ECB reference rates, cached for 24 hours. Falls back to a bundled snapshot when the service is unreachable.",
+            release,
+            &["Reference rates are for display and comparison, not settlement."],
+        ),
+        card(
+            "holidays-nager",
+            Dataset::Holidays,
+            "Nager.Date",
+            "MIT",
+            "Public holidays by country and year, cached for 24 hours. No fallback dataset is bundled, so an outage returns a degraded empty list.",
+            release,
+            &[],
+        ),
+        card(
+            "providers-registry",
+            Dataset::Providers,
+            "First-party registry",
+            "GPL-3.0-or-later",
+            "Curated airline and OTA deep-link templates. Templates are not partner-verified yet.",
+            release,
+            &["No affiliate relationships."],
+        ),
+        card(
+            "data-cards-registry",
+            Dataset::Meta,
+            "First-party registry",
+            "GPL-3.0-or-later",
+            "Lists every dataset with its source, licence and method so a reader can audit what a response is built from.",
+            release,
+            &[],
+        ),
+        card(
+            "fare-history",
+            Dataset::History,
+            "Fare Desk observations",
+            "Fare Desk data licence",
+            "Daily minimum price per route, travel date and physical service. Written from live searches until the scheduler lands.",
+            release,
+            &["Collection starts before launch so the buy/wait tab is not empty on day one."],
+        ),
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn providers_load() {
+        let providers = load_providers().unwrap();
+        assert!(providers.iter().any(|provider| provider.id == "tap"));
+        assert!(providers
+            .iter()
+            .any(|provider| provider.id == "google-flights"));
+        assert!(provider_for_name(&providers, "Ryanair").is_some());
+    }
+
+    #[test]
+    fn cards_cover_every_dataset() {
+        let cards = data_cards(Utc::now(), "test".into());
+        for dataset in [
+            Dataset::Airports,
+            Dataset::Fares,
+            Dataset::Routes,
+            Dataset::Fx,
+            Dataset::Holidays,
+            Dataset::Providers,
+            Dataset::History,
+            Dataset::Meta,
+        ] {
+            assert!(
+                cards.iter().any(|card| card.dataset == dataset),
+                "{dataset:?}"
+            );
+        }
+    }
+}
