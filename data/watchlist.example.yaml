@@ -1,0 +1,34 @@
+# Copy to data/watchlist.yaml and edit.
+# Keep this small. Ten to twenty-five routes is enough.
+
+home_airports: [BER]
+currency: EUR
+
+routes:
+  - name: Berlin to Lisbon, spring
+    origin: [BER]
+    destination: [LIS]
+    date_window: 2027-03-01/2027-03-08
+    modes: [air, rail, coach]
+    bags: 1 checked
+    max_door_to_door_hours: 12
+    cadence: 3x_day
+
+  - name: Berlin to London, monthly
+    origin: [BER]
+    destination: [LHR, LGW, STN, LTN, LCY]
+    date_window: 2026-11-01/2026-12-20
+    modes: [air, rail]
+    bags: carry_on
+    max_door_to_door_hours: 8
+    cadence: 2x_day
+
+alerts:
+  max_per_day: 5
+  quiet_hours: "23:00-07:00"
+  threshold: "new_low or 15% below trailing median"
+  channel: telegram
+
+baseline:
+  window_days: 90
+  min_observations: 14

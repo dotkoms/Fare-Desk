@@ -1,0 +1,9 @@
+# Runtime data — keep examples, ignore the live files
+data/watchlist.yaml
+data/ledger.jsonl
+data/briefs/
+data/candidates/
+data/verified/
+
+# OS noise
+.DS_Store
