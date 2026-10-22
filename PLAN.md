@@ -913,6 +913,8 @@ fleet/
 
 ## 14. Phases and acceptance criteria
 
+The same steps with effort, gates, exact reading and agent assignments: [docs/22-build-planner.md](docs/22-build-planner.md).
+
 | Phase | Build | Done when |
 |---|---|---|
 | **0 — List-first shell** (1 week) | Search, results, route strip, URL state, tokens, keyboard, price pills, status badges. No globe. | The full search-to-route-summary flow works with WebGL disabled; axe has zero critical issues; 20 cards scroll at 60fps |
