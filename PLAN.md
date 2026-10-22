@@ -403,7 +403,7 @@ Rules:
 - **Browser:** Obscura only if a source requires it; not needed for the licensed air path.
 - **Shared:** `crates/core` for types, geo, fingerprint, ranking, percentiles.
 - **Testing:** `cargo test`, Vitest, Playwright.
-- **Deploy:** static web; Rust API and SQLite/Postgres in one container.
+- **Deploy:** Vercel for the web app and static data dashboard; Rust API, scheduler and optional Obscura in a container (Fly.io/Render/Railway) with SQLite or Postgres. Full split, costs and checklist: [docs/15-hosting-on-vercel.md](docs/15-hosting-on-vercel.md).
 
 ---
 
@@ -633,7 +633,7 @@ The product needs to answer ten questions. This is what each one requires, and w
 | **Is it available?** | Seats left at the price | Optional: source-dependent |
 | **Which destinations are reachable?** | Current route network by month | Missing: OpenFlights is a 2014 demo; production needs live search or a current schedule source |
 
-**Verdict: six pieces are missing now.**
+**Verdict: six pieces must be added before the core loop is complete.**
 
 1. **Time zones** — local times, day boundaries and jet lag are wrong without them.
 2. **FX rates** — the point-of-sale net total and currency comparison are wrong without a dated rate.
@@ -647,6 +647,8 @@ The product needs to answer ten questions. This is what each one requires, and w
 The first four are small additions. The last two are the expensive ones: start with the top 50 airports and a conservative MCT default, then let the community improve them.
 
 **One more gap sits under Explore: route existence.** OpenFlights is a 2014 demo graph. For production, derive reachable destinations from live search history or a current schedule source; otherwise Explore shows routes that no longer operate. Until that source exists, limit Explore to the watchlist corridor rather than drawing a global map from stale data.
+
+Both hard problems — cold-start history and current route coverage — have a build plan: [docs/14-cold-start-and-coverage.md](docs/14-cold-start-and-coverage.md).
 
 ---
 
@@ -843,6 +845,7 @@ fleet/
    │  ├─ api/           Axum routes
    │  └─ scheduler/     daily history collection, alerts
    ├─ web/              React + react-globe.gl
+   ├─ infra/            Dockerfile, fly.toml, GitHub Actions
    └─ data/
       ├─ airports.json
       ├─ routes.json
@@ -870,6 +873,8 @@ Ship phase 1 as an internal demo. Ship phase 2 before investing in the advice en
 The unique data layers in section 10 attach to phases 3–7. Do not build a visual layer before its data has a baseline; an empty seasonality slider is worse than no slider.
 
 **Reference data is part of phase 2, not a later cleanup:** time zones, daily FX, the provider registry and public holidays. Fare rules land with phase 5; airport access and MCT with phase 7.
+
+**Start the shadow collector 12 weeks before launch.** Thirty routes, one search a day, daily minima in `fare_history`. The UI can ship while the history accumulates; the buy/wait tab stays in “collecting” until a route has enough observations. See [docs/14-cold-start-and-coverage.md](docs/14-cold-start-and-coverage.md).
 
 ---
 
@@ -908,7 +913,9 @@ The unique data layers in section 10 attach to phases 3–7. Do not build a visu
 | Risk | Mitigation |
 |---|---|
 | Advice is wrong or generic | Route-level history, confidence, backtest, and an explicit “insufficient data” state |
-| Cold start | Start collecting before launch; seed from cached sources; show watch pages |
+| Cold start | Start 12 weeks early; seed priors from cached and quarterly sources; show watch pages; no advice under 14 observations |
+| Explore shows dead routes | Validate every candidate with a live search; show coverage counts; keep Explore inside the corridor until a current route source exists |
+| Vercel cannot host the data plane | Vercel for web; Rust API, scheduler and Obscura in a container. See [docs/15-hosting-on-vercel.md](docs/15-hosting-on-vercel.md) |
 | Search cost and latency | Cached results first, verify in background; paid calls only for the shortlist |
 | Price changes between display and click | Re-price, timestamp, and show “price changed” |
 | Google/Kayak/Hopper already do this | Differentiate on auditability, total cost and no dark patterns, not on a magic score |
@@ -943,6 +950,7 @@ The unique data layers in section 10 attach to phases 3–7. Do not build a visu
 - **Advice:** empirical distributions, no ML, no advice without enough history.
 - **Point of sale:** licensed search plus official storefronts; eligibility-only, no spoofing.
 - **Reference data:** IANA time zones, ECB daily FX, Nager.Date holidays, first-party provider registry.
+- **Hosting:** Vercel for web and static dashboard; Rust API/scheduler/Obscura in a container with SQLite or Postgres.
 
 ### Still open
 

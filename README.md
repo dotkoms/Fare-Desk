@@ -20,6 +20,8 @@ A field manual for paying less for planes, trains and coaches — the data sourc
 | Avoid wasting time on myths | [docs/07-myths.md](docs/07-myths.md) |
 | Build the flights-only 3D finder and buy/wait engine | [PLAN.md](PLAN.md) |
 | See the unique data layers and open-source playbook | [PLAN.md §10](PLAN.md#10-unique-data-and-visual-layers) and [§18](PLAN.md#18-standout-open-source-playbook) |
+| Solve cold start and Explore coverage | [docs/14-cold-start-and-coverage.md](docs/14-cold-start-and-coverage.md) |
+| Deploy the web on Vercel | [docs/15-hosting-on-vercel.md](docs/15-hosting-on-vercel.md) |
 | Decide what is an API and what needs a browser | [docs/12-rust-data-layer.md](docs/12-rust-data-layer.md) |
 | Check whether another storefront is cheaper | [docs/13-point-of-sale.md](docs/13-point-of-sale.md) |
 
@@ -47,7 +49,9 @@ fleet/
 │  ├─ 10-points-and-protections.md Points math, EU261, refunds, OTA risk
 │  ├─ 11-sources.md                Evidence and uncertainty
 │  ├─ 12-rust-data-layer.md        Rust feeds, API vs scrape, Obscura
-│  └─ 13-point-of-sale.md          Storefront, currency and payment arbitrage
+│  ├─ 13-point-of-sale.md          Storefront, currency and payment arbitrage
+│  ├─ 14-cold-start-and-coverage.md History seeding and current route coverage
+│  └─ 15-hosting-on-vercel.md      Vercel split, data plane and costs
 └─ agents/
    ├─ README.md                    How to install the fleet
    ├─ desk-ops.md
