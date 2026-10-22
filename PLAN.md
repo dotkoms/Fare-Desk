@@ -491,7 +491,116 @@ The eligibility profile stays on the client or in a local table — residency, n
 
 ---
 
-## 10. Search and ranking
+## 10. Unique data and visual layers
+
+Inventory is a commodity. Every OTA has the same flights. The edge is **longitudinal** data — how a route's price behaves — and **total-cost** data — what the fare hides. Both are hard for a transaction-monetised incumbent to publish, and both are natural for an open-source project.
+
+Every dataset gets a **data card**: source, licence, coverage, freshness, methodology and known bias. No number appears without provenance.
+
+### The layers
+
+| Layer | Question it answers | Source | Effort | Visual | Order |
+|---|---|---|---|---|---|
+| **Open fare history** | Should I buy now? | Daily collection + Travelpayouts | M | percentile band, wait-win rate | Launch |
+| **Fare weather** | How erratic is this route? | Derived from history | L | volatility colour, expected range | Launch |
+| **Seasonality scrubber** | When is this route cheap? | History + cached calendars | M | month slider recolours the globe | Next (phase 6) |
+| **Cheap airport trap** | Is the cheap airport actually cheap? | OSM + GTFS + curated transfers | H | isochrones, door-to-door price | Next (phase 7) |
+| **True Fare** | What will bags and changes add? | Community-maintained fee data | M | total-cost breakdown | Next (phase 5) |
+| **Reliability** | Is it usually on time? | US BTS on-time data | M | on-time badge, adjusted price | Next (phase 7) |
+| **Climate overlay** | Is it cheap and pleasant? | Open-Meteo normals | L | “cheap and dry” month view | Next (phase 6) |
+| **What people paid** | What did travellers actually pay? | Opt-in submissions | M | community median | Later |
+| **Jet-lag cost** | What does the schedule do to me? | Time zones + flight times | L | circadian score | Later |
+| **Deal graveyard** | Which error fares survived? | Public deal posts + checks | H | outcome timeline | Later |
+
+### 10.1 Open fare history
+
+The core dataset. One row per route, travel date and observation day; the daily minimum is the signal.
+
+Publish the aggregate:
+
+- p10 / p50 / p90 for every route and lead time.
+- The days-to-departure curve.
+- How often waiting beat buying.
+- The average saving and the worst-case loss.
+
+**FareBench.** A reproducible benchmark built from fixed route/date snapshots: given the history up to day T, recommend buy or wait, then score the result against what happened. Publish the fixtures, the scoring code and the leaderboard. This turns “trust our algorithm” into “here is the data; check it.” It also gives researchers and contributors something concrete to improve.
+
+Data card: coverage, observation count per route, source mix, freshness, and the routes where the sample is too thin to advise.
+
+### 10.2 Fare weather
+
+A visual language for volatility, derived entirely from history:
+
+- **Stable** — narrow band, little movement; buy when convenient.
+- **Erratic** — wide band, frequent drops; watch and alert.
+- **Rising** — inside the window; buy now.
+
+Compute the coefficient of variation of the daily minimum, the frequency of meaningful drops, and the empirical 7-day range. Show the range, not a single prediction. The point is to make uncertainty legible.
+
+On the globe, colour routes by volatility; on the route page, show the band and the confidence. No “price will be €X” claims.
+
+### 10.3 Seasonality scrubber
+
+For each route, compute the median price by month and by week. Add a month slider to the globe: drag from January to December and watch the cheap routes move. This is the signature screenshot — and it is genuinely useful for flexible travellers.
+
+With the climate overlay, the query becomes “cheap and dry,” not just “cheap.” Combine a monthly fare percentile with a simple comfort score (temperature, rain) from Open-Meteo normals.
+
+Cold start: seed with Travelpayouts calendars and label thin months as “limited data.” Never present a monthly median from three observations as a seasonal fact.
+
+### 10.4 The cheap airport trap
+
+The most distinctive visual. For each airport, compute 30/60/90-minute reach from the city centre, plus the transfer cost, using OSM and GTFS. Then show:
+
+- the fare,
+- the transfer cost,
+- the door-to-door time,
+- the real price.
+
+A secondary airport that looks €40 cheaper but adds 90 minutes and €25 is not cheaper. Start with the top 50 airports by traffic and let the community add more. Cache the isochrones; they change slowly.
+
+This also gives the globe a second layer: access rings around airports, not just arcs between them.
+
+### 10.5 True Fare
+
+A structured, open dataset of ancillary fees by airline and fare family: carry-on, checked bag, seat selection, change, cancellation, with a source URL and a checked date. It is tedious to build and easy to contribute to, and it directly powers total-cost ranking.
+
+Ship it as YAML in the repo with a schema and CI validation. Treat stale entries as a bug and show “last checked.” Do not guess a fee; mark it unknown.
+
+### 10.6 Reliability
+
+Start with US BTS on-time and cancellation data, which is public. Show on-time rate by route, carrier and departure hour, and compute a **reliability-adjusted price**:
+
+```
+adjusted = price / on-time probability
+```
+
+or an expected cost that includes a delay allowance. A €70 flight with a 65% on-time rate can be worse than an €85 flight at 90%.
+
+Other markets can follow when an open dataset exists; do not scrape proprietary reliability scores.
+
+### 10.7 Climate overlay
+
+Open-Meteo climate normals, free and global. Compute a simple comfort score from average temperature and rain days, then show the months that are both cheap and pleasant. This is an Explore feature, not a search filter.
+
+### 10.8 What people actually paid
+
+An opt-in, anonymised submission: route, travel date, cabin, bags, total paid, and whether it was a deal. No account, no PII.
+
+This is the one dataset only an open-source community can build. It is also biased — self-reported, skewed toward deal hunters — so label it as a supplement, never as the verified price. Show sample size and the gap versus the API baseline.
+
+### 10.9 Jet-lag cost
+
+A heuristic score from time-zone difference, direction and arrival time. Eastbound red-eyes cost more than westbound day flights. Show it as a secondary badge, not a ranking input by default, and link to the method. It is shareable, human and cheap to compute.
+
+### 10.10 Deal graveyard
+
+Record public deal posts and what happened: price, route, expiry, whether the fare was honoured or cancelled, and how long it lived. Link to the original post; never republish fare content.
+
+This is a unique research dataset and a strong weekly report. It also carries legal and data-quality risk: only public posts, no scraping behind logins, and clear “reported, unverified” labels.
+
+---
+
+## 11. Search and ranking
 
 1. Resolve places; expand nearby airports (up to 3 each).
 2. Query the air source for the date range and passenger/bag parameters.
@@ -516,7 +625,7 @@ Defaults: value of time €15/hour; stop penalty €25 per stop; risk premium �
 
 ---
 
-## 11. API contract
+## 12. API contract
 
 ```ts
 type Place = {
@@ -588,11 +697,19 @@ type RouteSnapshot = {
 // POST /api/price-check   { itineraryId, profile }
 // GET  /api/explore?home=BER&month=2027-03
 // POST /api/alerts
+// GET  /api/fare-weather?from=BER&to=LIS&date=2027-03-01
+// GET  /api/seasonality?from=BER&to=LIS
+// GET  /api/airport-access?airport=BER
+// GET  /api/true-fare?airline=LH&fareFamily=light
+// GET  /api/reliability?from=BER&to=LIS
+// GET  /api/data-card?dataset=fares
 ```
+
+Every data endpoint returns its sample size, observation window and data-card id. A response without provenance is a bug.
 
 ---
 
-## 12. Repository layout
+## 13. Repository layout
 
 ```
 fleet/
@@ -605,6 +722,7 @@ fleet/
    │  ├─ core/          types, geo, rank, percentiles, fingerprint
    │  ├─ sources/       serpapi, travelpayouts, duffel, mcp
    │  ├─ pos/           multi-storefront screening, eligibility, net total
+   │  ├─ layers/        fare weather, seasonality, access, fees, reliability
    │  ├─ browser/       optional Obscura pool
    │  ├─ store/         SQLite/Postgres, history, quota
    │  ├─ api/           Axum routes
@@ -612,12 +730,13 @@ fleet/
    ├─ web/              React + react-globe.gl
    └─ data/
       ├─ airports.json
-      └─ routes.json
+      ├─ routes.json
+      └─ open/          versioned CSV/Parquet exports + data cards
 ```
 
 ---
 
-## 13. Phases and acceptance criteria
+## 14. Phases and acceptance criteria
 
 | Phase | Build | Done when |
 |---|---|---|
@@ -625,16 +744,19 @@ fleet/
 | **1 — Search shell** (3–4 days) | Panel, combobox, date range, result cards, mock search, selection highlighting | A fixture route can be searched, hovered and selected |
 | **2 — Air data** (5–7 days) | Rust API, places, route previews, SerpAPI adapter, cache, quota, verification | Real BER–LIS results with total price, bags and a verified timestamp |
 | **3 — History collection** (3–4 days) | Daily scheduler, `fare_history`, percentiles, route snapshot endpoint | A route accumulates daily minima and returns p10/p50/p90 |
-| **4 — Buy/wait** (4–6 days) | Curve, recommendation rules, confidence, backtest, route-intelligence panel | A recommendation is shown only with enough data; the backtest is visible |
+| **4 — Buy/wait + fare weather** (5–7 days) | Curve, recommendation rules, confidence, backtest, volatility band, route-intelligence panel | A recommendation is shown only with enough data; the backtest and the uncertainty band are visible |
 | **5 — Point of sale** (4–6 days) | Eligibility profile, three-to-five storefront screening, net total, status labels, comparison table | A route shows an eligible storefront comparison, or explicitly says the home storefront is best |
-| **6 — Explore** (3–4 days) | Home airport, cheap-destination feed, arc colouring, destination cards | The globe shows the cheapest destinations from one airport with percentile labels |
-| **7 — Alerts and polish** (4–6 days) | Watchlist, alert thresholds, mobile bottom sheet, accessibility, reduced motion | A saved route notifies on a new low; mobile works one-handed |
+| **6 — Explore + climate** (4–5 days) | Home airport, cheap-destination feed, seasonality scrubber, climate overlay, destination cards | The globe shows cheap and pleasant destinations by month, with sample-size labels |
+| **7 — Airport access + reliability** (5–7 days) | Isochrones for the top 50 airports, transfer cost, on-time data for US routes, adjusted price | A cheap secondary airport is shown with its real door-to-door price and time |
+| **8 — Alerts and polish** (4–6 days) | Watchlist, alert thresholds, mobile bottom sheet, accessibility, reduced motion | A saved route notifies on a new low; mobile works one-handed |
 
 Ship phase 1 as an internal demo. Ship phase 2 before investing in the advice engine; without reliable prices the advice is noise.
 
+The unique data layers in section 10 attach to phases 3–7. Do not build a visual layer before its data has a baseline; an empty seasonality slider is worse than no slider.
+
 ---
 
-## 14. Performance, accessibility and testing
+## 15. Performance, accessibility and testing
 
 ### Performance
 
@@ -664,7 +786,7 @@ Ship phase 1 as an internal demo. Ship phase 2 before investing in the advice en
 
 ---
 
-## 15. Risks and mitigations
+## 16. Risks and mitigations
 
 | Risk | Mitigation |
 |---|---|
@@ -686,7 +808,7 @@ Ship phase 1 as an internal demo. Ship phase 2 before investing in the advice en
 
 ---
 
-## 16. Decisions
+## 17. Decisions
 
 ### Decided
 
@@ -711,7 +833,85 @@ Ship phase 1 as an internal demo. Ship phase 2 before investing in the advice en
 
 ---
 
-## 17. The first commit
+## 18. Standout open-source playbook
+
+If this were run like a standout open-source launch — the OpenClaw/Eyes of God instinct — the app would be the demo and the **data would be the contribution**. The goal is not another flight search box; it is the reference implementation for “when should I buy?” plus a public dataset nobody else publishes.
+
+### Make the demo the distribution
+
+- **One command, no keys.** `docker compose up` shows the globe, an Explore view and a fixture search. Live data is opt-in BYOK. If a contributor needs a SerpAPI key to see the product, most will never see it.
+- **A hosted demo.** Rate-limited, clearly labelled, reset weekly. It is the link in every post.
+- **One 15-second GIF.** The month scrubber or the cheap-airport trap. Not a feature list.
+- **A “god view.”** One global screen that makes the whole system legible: fare weather, seasonality, anomalies, cheap routes from a home airport. The Eyes of God instinct is right — one view that explains a complex system is worth ten settings panels.
+
+### Make the data the contribution
+
+- Publish the fare history and the backtest, not just the app. CSV/Parquet, versioned, with a data card.
+- Build **FareBench**: fixed snapshots, a buy/wait task, a scoring harness, a leaderboard. This is the thing researchers cite and contributors improve.
+- Publish **True Fare** (ancillary fees) and **airport access** as community datasets with source and checked dates.
+- Run a weekly **“State of Airfare”** report generated from the data: biggest drops, routes where waiting won, fee changes. Shareable charts, no app required.
+- Every claim links to its evidence. “This route is 41% below median” should open the observations.
+
+### Make the complex legible
+
+- A **“why is this cheap?” receipt** for every itinerary: structure, point of sale, timing, fee breakdown, reliability, access time. Shareable as an image or a link.
+- A **route anatomy** view: arcs, stops, layovers, transfer, door-to-door time, total cost.
+- A **month scrubber** and a **volatility layer** that turn a table of fares into a picture of behaviour.
+- A **list-only mode** for accessibility and low-power devices. The globe is the hook; the list is the product.
+
+### Build in public with receipts
+
+- A short devlog every week: what shipped, what broke, what the data showed. Link the commit.
+- Public roadmap with votes, and a changelog that reads like a story.
+- Publish the failures: “waiting advice lost money on 38% of routes” is more credible than a highlight reel.
+- Launch with a **finding**, not a manifesto. “We analysed N fare observations and found X” travels further than “we built a flight app.”
+
+### Security is the product
+
+The OpenClaw pattern — a local-first tool that installs in one command — is the distribution model to copy. The cautionary half is that a viral tool which executes code needs sandboxing, scoped permissions and a visible security model from day one.
+
+- Obscura runs untrusted page JavaScript in-process: container, non-root, read-only root, egress allowlist, no credentials.
+- No API keys in the browser. No keys in logs. No keys in the repo.
+- Signed releases, SBOM, `cargo audit`, pinned dependencies, a `SECURITY.md` with a disclosure path.
+- Plugins are declarative source manifests, not arbitrary code. A community adapter should not be able to read the filesystem.
+- A visible “what this app can and cannot do” page: no booking, no payment, no ticket issuance.
+
+### Community loops
+
+- A **source SDK** and fixture harness, so adding an adapter is a small PR, not a fork.
+- **Good first issues** that are real: airport metadata, a fee entry, a translation, a test fixture.
+- **Data bounties**: “add the 20 missing airport transfer costs for Italy,” credited in the release notes.
+- Contributor credits and a `CONTRIBUTORS.md`; a monthly “data hero.”
+- Discussions for ideas, issues for bugs. Do not let the issue tracker become a wish list.
+
+### Sustainability without paid ranking
+
+- BYOK for self-hosters; a rate-limited hosted demo; sponsorship or a paid hosted tier.
+- Affiliate links are disclosed and **never** affect ranking. Publish the ranking formula and the backtest so anyone can check.
+- Choose the licence deliberately: Apache-2.0 for adoption, AGPL-3.0 if a hosted competitor must share changes. Docs under CC BY 4.0; data under its original licences.
+- DCO rather than a CLA. A CLA suppresses casual contributors.
+
+### Scope discipline
+
+- Flights only. One home airport or corridor first. One command.
+- No accounts, no checkout, no mobile app, no custom ML model in v1.
+- Every new data layer must answer a question the user already has. “Cool” is not a question.
+
+### Launch checklist
+
+- [ ] `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `ROADMAP.md`
+- [ ] Demo mode with fixtures; hosted demo
+- [ ] 15-second GIF and a one-paragraph README pitch
+- [ ] A finding from the first dataset, with a methodology link
+- [ ] FareBench fixtures and a scoring command
+- [ ] Data cards for every published layer
+- [ ] CI: fmt, clippy, test, frontend build, Playwright, license check
+- [ ] Ten good first issues
+- [ ] No keys, no fare republishing, no paid placement
+
+---
+
+## 19. The first commit
 
 - Vite + React + TypeScript scaffold.
 - `react-globe.gl` with a textured globe, 1,000 airports and 500 static arcs.

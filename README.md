@@ -19,6 +19,7 @@ A field manual for paying less for planes, trains and coaches — the data sourc
 | Build the agent fleet | [docs/08-agent-fleet.md](docs/08-agent-fleet.md) and [agents/](agents/) |
 | Avoid wasting time on myths | [docs/07-myths.md](docs/07-myths.md) |
 | Build the flights-only 3D finder and buy/wait engine | [PLAN.md](PLAN.md) |
+| See the unique data layers and open-source playbook | [PLAN.md §10](PLAN.md#10-unique-data-and-visual-layers) and [§18](PLAN.md#18-standout-open-source-playbook) |
 | Decide what is an API and what needs a browser | [docs/12-rust-data-layer.md](docs/12-rust-data-layer.md) |
 | Check whether another storefront is cheaper | [docs/13-point-of-sale.md](docs/13-point-of-sale.md) |
 
