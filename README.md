@@ -80,6 +80,16 @@ fleet/
 
 ---
 
+## Run the app
+
+```bash
+cd app/web
+npm install
+npm run dev
+```
+
+The first slice is the list-first shell with fixture data for BER–LIS, BER–LHR, BER–BCN and BER–JFK. No live prices, no globe, no booking yet.
+
 ## API or scrape?
 
 | Mode | Public self-serve price API? | Practical answer |
