@@ -414,10 +414,27 @@ Rules:
 | Dataset | Use | Licence |
 |---|---|---|
 | [OurAirports](https://ourairports.com/data/) | Airports, coordinates, scheduled service | Public domain |
-| [OpenFlights routes](https://openflights.org/data.html) | Demo route graph for idle arcs | ODbL |
+| [OpenFlights routes](https://openflights.org/data.html) | Demo route graph for idle arcs only; the dataset is from 2014 and is not production-current | ODbL |
 | Nominatim / OSM | City search fallback | ODbL; rate-limited |
 
 Filter to airports with scheduled service. Cap idle arcs to the top destinations by traffic.
+
+### Reference data
+
+These are not fare feeds, but the product is wrong without them.
+
+| Dataset | Fields | Source | Licence / cost | When |
+|---|---|---|---|---|
+| **Time zones** | IANA zone per place | IANA tzdata | Public domain | Now |
+| **FX rates** | daily reference rate, base/quote | ECB Data Portal, Frankfurter | Free | Now |
+| **Provider registry** | airline/OTA, country, currencies, payment methods, deep-link template, affiliate flag | First-party | Internal | Now |
+| **Public holidays** | country, date, name | Nager.Date | MIT | Now |
+| **School holidays** | region, start, end | Government calendars, curated | Varies | Launch markets |
+| **Fare rules and baggage** | fare family, carry-on, checked, change, cancel, seat, size/weight | Airline pages, community | Curated | Phase 5 |
+| **Airport access** | city centre, mode, minutes, cost, frequency | OSM/GTFS + curated | ODbL / varies | Phase 7 |
+| **Minimum connection times** | airport, domestic/international, source | Airport/airline MCT + conservative default | Curated | Phase 7 |
+| **Availability** | seats left at price, fare class | Search response | Source | Optional |
+| **Deal feeds** | error fares, promos | Public sites, RSS, Telegram | Link only | Later (optional) |
 
 ### Fares
 
@@ -598,6 +615,39 @@ Record public deal posts and what happened: price, route, expiry, whether the fa
 
 This is a unique research dataset and a strong weekly report. It also carries legal and data-quality risk: only public posts, no scraping behind logins, and clear “reported, unverified” labels.
 
+### 10.11 Data completeness check
+
+The product needs to answer ten questions. This is what each one requires, and what is still missing.
+
+| Question | Data required | Status |
+|---|---|---|
+| **Which flights exist?** | Offers, schedules, airports | Have: SerpAPI, Duffel, OurAirports |
+| **What is the total price?** | Fare, taxes, bags, seats, fees, FX | Partial: FX missing; fees in phase 5 |
+| **What is the total time?** | Durations, layovers, airport access, MCT | Partial: access and MCT in phase 7 |
+| **Should I buy now?** | History, lead-time curve, seasonality, holidays, volatility | Partial: holidays missing; rest planned |
+| **Where should I buy?** | POS quotes, provider registry, FX, eligibility | Partial: registry and FX missing |
+| **Is it reliable?** | On-time and cancellation rates | Planned: phase 7 |
+| **Is it pleasant?** | Climate normals, jet-lag score | Planned: phases 6–7 |
+| **Is it a deal?** | Route baseline, deal feeds | Partial: baseline planned; feeds later |
+| **Is it eligible?** | Fare rules, baggage policy, payment methods | Partial: fare rules phase 5; registry now |
+| **Is it available?** | Seats left at the price | Optional: source-dependent |
+| **Which destinations are reachable?** | Current route network by month | Missing: OpenFlights is a 2014 demo; production needs live search or a current schedule source |
+
+**Verdict: six pieces are missing now.**
+
+1. **Time zones** — local times, day boundaries and jet lag are wrong without them.
+2. **FX rates** — the point-of-sale net total and currency comparison are wrong without a dated rate.
+3. **Provider registry** — redirects, eligibility and affiliate disclosure need one structured list of airlines and OTAs.
+4. **Public and school holidays** — seasonality and demand advice miss the largest price spikes without them.
+5. **Fare rules and baggage schema** — “total cost” is a headline fare without carry-on, checked, change and cancel rules.
+6. **Airport access and minimum connection times** — door-to-door time and self-transfer risk are guesses without them.
+
+**Defer, but design the schema now:** deal feeds, seat availability, schedule/route seasonality, emissions, points, security wait times, overnight hotel costs. Each is useful; none is required to prove the core loop.
+
+The first four are small additions. The last two are the expensive ones: start with the top 50 airports and a conservative MCT default, then let the community improve them.
+
+**One more gap sits under Explore: route existence.** OpenFlights is a 2014 demo graph. For production, derive reachable destinations from live search history or a current schedule source; otherwise Explore shows routes that no longer operate. Until that source exists, limit Explore to the watchlist corridor rather than drawing a global map from stale data.
+
 ---
 
 ## 11. Search and ranking
@@ -636,21 +686,81 @@ type Place = {
   country: string;
   lat: number;
   lng: number;
+  timezone: string;        // IANA, e.g. 'Europe/Berlin'
+  metro?: string;          // groups BER with nearby airports
+  cityCenter?: { lat: number; lng: number };
+};
+
+type FxRate = {
+  date: string;
+  base: string;
+  quote: string;
+  rate: number;
+  source: 'ECB' | 'other';
+};
+
+type Provider = {
+  id: string;
+  name: string;
+  kind: 'airline' | 'ota';
+  country: string;
+  currencies: string[];
+  paymentMethods: string[];
+  deepLinkTemplate: string;
+  affiliate: boolean;
+};
+
+type FareRule = {
+  airline: string;
+  fareFamily: string;
+  carryOn: { included: boolean; dimensions?: string; weightKg?: number };
+  checked: { included: number; dimensions?: string; weightKg?: number };
+  changeFee: number | null;
+  cancelFee: number | null;
+  seatFee: number | null;
+  source: string;
+  checkedAt: string;
+};
+
+type Segment = {
+  id: string;
+  marketingCarrier: string;
+  operatingCarrier: string;
+  serviceNumber: string;
+  from: Place;
+  to: Place;
+  departTerminal?: string;
+  arriveTerminal?: string;
+  departLocal: string;     // ISO with offset
+  arriveLocal: string;     // ISO with offset
+  durationMinutes: number;
+  aircraft?: string;
+  cabin: 'economy' | 'premium' | 'business' | 'first';
+  fareClass?: string;
 };
 
 type Itinerary = {
   id: string;
   segments: Segment[];
   totalPrice: number;
+  taxesAndFees?: number;
   currency: string;
   totalDurationMinutes: number;
   stops: number;
-  bags: { carryOn: number; checked: number };
+  fareFamily?: string;
+  bagsIncluded: { carryOn: number; checked: number };
   fareRules: { refundable: boolean; changeable: boolean };
   providerUrl: string;   // where the traveller completes the purchase
   source: string;
   verifiedAt: string | null;
   risk: Array<'self-transfer' | 'ota-only' | 'hidden-city'>;
+  score?: {
+    total: number;
+    price: number;
+    timeCost: number;
+    stopPenalty: number;
+    riskPremium: number;
+  };
 };
 
 type PosQuote = {
@@ -703,6 +813,11 @@ type RouteSnapshot = {
 // GET  /api/true-fare?airline=LH&fareFamily=light
 // GET  /api/reliability?from=BER&to=LIS
 // GET  /api/data-card?dataset=fares
+// GET  /api/reference/fx?base=EUR&date=2027-03-01
+// GET  /api/reference/holidays?country=DE&year=2027
+// GET  /api/reference/providers?airport=BER
+// GET  /api/reference/fare-rules?airline=LH&fareFamily=light
+// GET  /api/reference/access?airport=BER
 ```
 
 Every data endpoint returns its sample size, observation window and data-card id. A response without provenance is a bug.
@@ -754,6 +869,8 @@ Ship phase 1 as an internal demo. Ship phase 2 before investing in the advice en
 
 The unique data layers in section 10 attach to phases 3–7. Do not build a visual layer before its data has a baseline; an empty seasonality slider is worse than no slider.
 
+**Reference data is part of phase 2, not a later cleanup:** time zones, daily FX, the provider registry and public holidays. Fare rules land with phase 5; airport access and MCT with phase 7.
+
 ---
 
 ## 15. Performance, accessibility and testing
@@ -796,6 +913,7 @@ The unique data layers in section 10 attach to phases 3–7. Do not build a visu
 | Price changes between display and click | Re-price, timestamp, and show “price changed” |
 | Google/Kayak/Hopper already do this | Differentiate on auditability, total cost and no dark patterns, not on a magic score |
 | Globe is a demo, not a tool | List-first results; globe supports discovery and route context; 2D toggle later |
+| Stale route graph | Use live search or a current schedule source; limit Explore to the corridor until then |
 | Airport/label clutter | Cap labels and arcs by traffic; show more on zoom |
 | Anti-meridian arcs | Split at ±180°; test long routes |
 | Scraping/ToS | Licensed sources only for displayed prices; no Google/Southwest/easyJet scraping |
@@ -803,6 +921,11 @@ The unique data layers in section 10 attach to phases 3–7. Do not build a visu
 | FX fee erases the POS gap | Compute net total at the card rate; show only gaps above €20 or 5% |
 | Listed POS price fails at payment | Label “listed, unconfirmed”; never promise the final price |
 | Foreign storefront after-sales | Show the ticketing country and refund path; warn when support is harder |
+| Stale FX | Use the dated ECB rate; show the date; never use a marketing rate |
+| Missing holiday or school calendar | Label seasonality as partial; add launch markets first; never imply a complete demand model |
+| Provider link rot | Registry tests in CI; fail the build on a dead deep-link template |
+| Fare rules change | Store `checked_at`; show “unknown” rather than guessing a fee |
+| MCT too tight | Use a conservative default; warn on self-transfer; improve with community data |
 | Obscura limits | Optional; does not beat active bot protection; keep a fallback |
 | Data licensing | Attribute OurAirports, OpenFlights, OSM |
 
@@ -819,6 +942,7 @@ The unique data layers in section 10 attach to phases 3–7. Do not build a visu
 - **Commerce:** redirect only. No checkout, payment, ticketing, changes or refunds.
 - **Advice:** empirical distributions, no ML, no advice without enough history.
 - **Point of sale:** licensed search plus official storefronts; eligibility-only, no spoofing.
+- **Reference data:** IANA time zones, ECB daily FX, Nager.Date holidays, first-party provider registry.
 
 ### Still open
 
@@ -828,8 +952,12 @@ The unique data layers in section 10 attach to phases 3–7. Do not build a visu
 4. **Advice policy:** how aggressive should BUY be below p10? How much weight on refundability?
 5. **POS markets:** which three to five storefronts to screen by default, and whether the traveller can add their own.
 6. **POS threshold:** €20 or 5% — or a different rule for premium cabins.
-7. **Budget:** SerpAPI cap and hosting.
-8. **Name:** “Fleet Atlas” is a working title.
+7. **Explore route network:** derive destinations from live search history, or license a current schedule source?
+8. **School holiday coverage:** which countries at launch; the data is manual and uneven.
+9. **MCT source:** use a conservative default, or curate airport-level values from the start?
+10. **Deal feeds:** include error fares and promos in v1, or keep the product purely search and timing?
+11. **Budget:** SerpAPI cap and hosting.
+12. **Name:** “Fleet Atlas” is a working title.
 
 ---
 
@@ -851,6 +979,7 @@ If this were run like a standout open-source launch — the OpenClaw/Eyes of God
 - Publish **True Fare** (ancillary fees) and **airport access** as community datasets with source and checked dates.
 - Run a weekly **“State of Airfare”** report generated from the data: biggest drops, routes where waiting won, fee changes. Shareable charts, no app required.
 - Every claim links to its evidence. “This route is 41% below median” should open the observations.
+- Ship **primitives**, not just an app: a CLI (`fleet weather BER LIS`), an MCP server (`should_i_buy`), and an embeddable fare-weather widget for travel bloggers. Each is a distribution surface.
 
 ### Make the complex legible
 
@@ -893,7 +1022,7 @@ The OpenClaw pattern — a local-first tool that installs in one command — is 
 
 ### Scope discipline
 
-- Flights only. One home airport or corridor first. One command.
+- Flights only. One home airport or corridor first: roughly 30 routes and 60 days of real observations before going global. One command.
 - No accounts, no checkout, no mobile app, no custom ML model in v1.
 - Every new data layer must answer a question the user already has. “Cool” is not a question.
 
