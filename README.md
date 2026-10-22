@@ -83,7 +83,8 @@ Scan wide with free or cheap scrapers. Verify the shortlist with a stable paid s
 
 ## Ground rules
 
-- **No booking automation.** The fleet finds and captures; a human transacts.
+- **Redirect, don't sell.** Fleet Atlas links to the airline, OTA or operator; it does not process payment, issue tickets, or handle changes and refunds.
+- **No booking automation.** The fleet finds and captures; a human transacts on the provider's site.
 - **Total cost or nothing.** Bags, seats, booking fees, terminal transfers and the value of time belong on every line.
 - **Link to the source.** Fetching public data is one risk; republishing airline fare content is the risk that cost Skiplagged $9.4M.
 - **Fares are not guaranteed until ticketed.** Mistake fares can be cancelled; “live” award results can be stale.

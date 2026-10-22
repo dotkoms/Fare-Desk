@@ -2,6 +2,8 @@
 
 How the same flight gets different prices on different country storefronts, which of those differences a traveller can legitimately use, and how the app should check them without pretending a VPN is a strategy.
 
+**Commerce model:** the app compares and redirects. It does not sell, issue, change or refund tickets and never takes payment. Every row links to the provider; the purchase happens there.
+
 ---
 
 ## 1. What is actually happening
@@ -80,7 +82,7 @@ For each storefront:
 net = fare
     + bags
     + seats
-    + booking fee
+    + provider booking fee
     + card FX fee
     + forced currency conversion
     + ground transfer, if it differs
@@ -92,11 +94,11 @@ Convert at the card's rate plus its FX fee, not the airline's marketing rate. Sh
 
 Every POS row gets one of three labels:
 
-- **Bookable** — fare rules and payment requirements match the profile.
+- **Eligible** — fare rules and payment requirements match the profile; the purchase can be completed on the provider site.
 - **Listed, unconfirmed** — the price is visible, but a local card or billing address may be required. The app cannot verify the final price without entering payment.
 - **Ineligible** — residency-restricted, local-payment-only, or otherwise not available to this traveller.
 
-Never show a foreign price as bookable without that distinction.
+Never show a foreign price as eligible without that distinction.
 
 ### 3.5 Persistence threshold
 
@@ -117,12 +119,12 @@ Illustrative numbers, not a quote:
 
 | Storefront | Currency | Fare | Bags | FX fee | Net | Status |
 |---|---|---:|---:|---:|---:|---|
-| Airline DE | EUR | 89 | 30 | 0 | 119 | Bookable |
-| Airline US | USD | 104 | 35 | 0 | 139 | Bookable |
+| Airline DE | EUR | 89 | 30 | 0 | 119 | Eligible |
+| Airline US | USD | 104 | 35 | 0 | 139 | Eligible |
 | Airline PT | EUR | 92 | 25 | 0 | 117 | Listed; local card may be required |
 | OTA | EUR | 84 | 45 | 0 | 129 | Listed; OTA-only, refund path weaker |
 
-The cheapest fare is not the cheapest trip. The cheapest **bookable net total** is the recommendation.
+The cheapest fare is not the cheapest trip. The cheapest **eligible net total** is the recommendation.
 
 ---
 
@@ -143,7 +145,7 @@ Not worth it: short-haul economy with a small gap, a card that charges 3% FX, or
 
 The app should say:
 
-> “We checked the storefronts you can actually use. Your home storefront is €89 all-in. The German storefront is €119 with the bag. No bookable saving today.”
+> “We checked the storefronts you can actually use. Your home storefront is €89 all-in. The German storefront is €119 with the bag. No eligible saving today.”
 
 Not:
 
@@ -160,6 +162,7 @@ The first is a trust feature. The second is the reason people stop believing tra
 - **No borrowed cards or accounts.**
 - **No residency-restricted fare without eligibility.**
 - **No hidden-city constructions** in this feature; they are a separate, higher-risk topic.
+- **No checkout, payment, ticketing, changes or refunds.** The app redirects to the provider and stops there.
 - **No promise of the final price** until the traveller reaches the payment step.
 - **No republishing of fare content**; link to the storefront.
 
@@ -174,11 +177,11 @@ Track:
 - **Gap frequency:** share of routes where the best eligible storefront beats home by more than the threshold.
 - **Median net gap**, by cabin and region.
 - **Persistence:** share of gaps still present after 7 days.
-- **Bookable rate:** share of “listed” prices that complete at payment.
-- **Conversion:** share of POS checks that lead to a booking.
+- **Eligible rate:** share of “listed” prices that complete at payment.
+- **Conversion:** share of POS checks that lead to a provider click.
 - **Complaints:** price-changed or ticket-cancelled reports.
 
-If the bookable rate is low, the feature is a tease. If the median net gap is below the threshold, it is not worth the UI.
+If the eligible rate is low, the feature is a tease. If the median net gap is below the threshold, it is not worth the UI.
 
 ---
 

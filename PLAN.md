@@ -10,6 +10,8 @@ A 3D globe of airports and routes, a search console on the left, and a route pag
 
 ## 1. The product in one paragraph
 
+Fleet Atlas is a discovery and redirection product: it finds the best flights and the best time to buy, then sends the traveller to the airline or OTA to complete the purchase. It does not sell tickets, take payment, or handle changes and refunds.
+
 A traveller opens Fleet Atlas, types “Berlin” and “Lisbon,” picks a week in March, and sees the best flights ranked on total cost. The globe draws the candidate routes as arcs; hovering a result lifts its arc, clicking it frames the route and dims the rest. A second tab answers the harder question: *should I buy now?* It shows the route's price history, where today's fare sits in the distribution, what usually happens between now and departure, and a plain recommendation — buy, wait, or watch — with a confidence level. When a route looks good, it also checks whether another country storefront the traveller is eligible for beats the home price after FX and bags. A third mode, Explore, turns the globe into a map of cheap places from your home airport.
 
 ---
@@ -29,11 +31,21 @@ A traveller opens Fleet Atlas, types “Berlin” and “Lisbon,” picks a week
 ### Non-goals for v1
 
 - Trains, coaches or ferries.
-- Booking inside the app. Every result deeplinks to the airline or a licensed OTA.
+- Selling tickets, processing payments, issuing tickets, or handling changes and refunds.
+- Booking inside the app. Every result redirects to the airline or a licensed OTA, where the purchase is completed.
 - Multi-city itineraries. One-way and return only.
 - A machine-learning price predictor. v1 uses empirical distributions.
 - User accounts, saved trips, social features.
 - Full global live search on every query. Cached routes and background refresh are part of the design.
+
+### Commerce model
+
+Fleet Atlas is not a travel agency, OTA or merchant of record. It does not sell, issue, change or refund tickets, and it never takes payment. Every result links to the provider — the airline, the OTA, or the operator — and the transaction happens there.
+
+- The displayed price is verified at the time of display; the final price and availability are confirmed on the provider's site.
+- The provider's fare rules, payment requirements and after-sales terms govern the purchase.
+- Affiliate links, if used, are disclosed.
+- The app never auto-fills residency or billing details, and never books on the traveller's behalf.
 
 ---
 
@@ -199,7 +211,7 @@ A traveller opens Fleet Atlas, types “Berlin” and “Lisbon,” picks a week
 - Days-to-departure curve: what the fare usually does from here.
 - Recommendation card: BUY / WAIT / WATCH, confidence, expected change, downside.
 - Fare rules: refundable, changeable, bag inclusion.
-- **Where to book:** a short comparison of eligible storefronts with net totals and Bookable / Listed / Ineligible status. Hidden unless a material, persistent gap exists.
+- **Provider options:** a short comparison of eligible storefronts with net totals and Eligible / Listed / Ineligible status. Hidden unless a material, persistent gap exists. Each row links out; the purchase happens on the provider's site.
 - Alert threshold and “watch this route.”
 - Backtest note: “On this route, waiting beat buying in 6 of 10 similar cases.”
 
@@ -300,11 +312,11 @@ The same physical flight can be cheaper on another country's storefront. The app
 
 **Eligibility.** Store residency, nationality, the countries where the traveller holds a card or account, and the payment methods they can use. No card numbers, no addresses. Label every row:
 
-- **Bookable** — fare rules and payment requirements match.
+- **Eligible** — fare rules and payment requirements match the traveller; the purchase can be completed on the provider's site.
 - **Listed, unconfirmed** — visible price, but a local card or billing address may be required.
 - **Ineligible** — residency-restricted or local-payment-only.
 
-**Net total.** Fare + bags + seats + booking fee + card FX fee + forced conversion + ground transfer. Convert at the card's rate, not the airline's marketing rate.
+**Net total.** Fare + bags + seats + provider booking fee + card FX fee + forced conversion + ground transfer. Convert at the card's rate, not the airline's marketing rate.
 
 **Threshold.** Recommend a foreign storefront only when the net gap is above €20 or 5%, whichever is higher, and has persisted for several days, and the fare rules are equivalent.
 
@@ -377,7 +389,7 @@ Rules:
 │  search → sources → normalizer → ranker → verifier            │
 │       ├─ SerpAPI / SearchApi (Google Flights)                 │
 │       ├─ Travelpayouts (cached baselines)                     │
-│       ├─ Duffel (booking links)                               │
+│       ├─ Duffel (provider links)                               │
 │       ├─ multi-storefront POS screening (gl/hl/currency)      │
 │       └─ Obscura (optional, browser-bound sources)            │
 │  SQLite / Postgres: offers, history, ledger, quota            │
@@ -414,7 +426,7 @@ Filter to airports with scheduled service. Cap idle arcs to the top destinations
 | SerpAPI Google Flights | Live search and verification |
 | SearchApi | Cheaper at volume, same surface |
 | Travelpayouts | Cached baselines and price calendar |
-| Duffel | Booking deeplinks and offer detail |
+| Duffel | Offer detail and provider links; the app never books |
 | Skiplagged MCP | Flexible-date and hidden-city leads (flags required) |
 | Kiwi MCP | Self-transfer leads (flags required) |
 | Obscura | Optional, browser-bound sources only |
@@ -455,7 +467,7 @@ CREATE TABLE pos_quotes (
   fees              REAL,
   fx_fee            REAL,
   net_total         REAL,
-  status            TEXT,   -- bookable | listed | ineligible
+  status            TEXT,   -- eligible | listed | ineligible
   fare_rules        TEXT,
   observed_at       TEXT,
   expires_at        TEXT,
@@ -526,7 +538,7 @@ type Itinerary = {
   stops: number;
   bags: { carryOn: number; checked: number };
   fareRules: { refundable: boolean; changeable: boolean };
-  bookingUrl: string;
+  providerUrl: string;   // where the traveller completes the purchase
   source: string;
   verifiedAt: string | null;
   risk: Array<'self-transfer' | 'ota-only' | 'hidden-city'>;
@@ -540,9 +552,9 @@ type PosQuote = {
   fees: number;
   fxFee: number;
   netTotal: number;
-  status: 'bookable' | 'listed' | 'ineligible';
+  status: 'eligible' | 'listed' | 'ineligible';
   fareRulesEquivalent: boolean;
-  bookingUrl: string;
+  providerUrl: string;   // provider site; the app does not book
   observedAt: string;
 };
 
@@ -614,7 +626,7 @@ fleet/
 | **2 — Air data** (5–7 days) | Rust API, places, route previews, SerpAPI adapter, cache, quota, verification | Real BER–LIS results with total price, bags and a verified timestamp |
 | **3 — History collection** (3–4 days) | Daily scheduler, `fare_history`, percentiles, route snapshot endpoint | A route accumulates daily minima and returns p10/p50/p90 |
 | **4 — Buy/wait** (4–6 days) | Curve, recommendation rules, confidence, backtest, route-intelligence panel | A recommendation is shown only with enough data; the backtest is visible |
-| **5 — Point of sale** (4–6 days) | Eligibility profile, three-to-five storefront screening, net total, status labels, comparison table | A route shows a bookable storefront comparison, or explicitly says the home storefront is best |
+| **5 — Point of sale** (4–6 days) | Eligibility profile, three-to-five storefront screening, net total, status labels, comparison table | A route shows an eligible storefront comparison, or explicitly says the home storefront is best |
 | **6 — Explore** (3–4 days) | Home airport, cheap-destination feed, arc colouring, destination cards | The globe shows the cheapest destinations from one airport with percentile labels |
 | **7 — Alerts and polish** (4–6 days) | Watchlist, alert thresholds, mobile bottom sheet, accessibility, reduced motion | A saved route notifies on a new low; mobile works one-handed |
 
@@ -682,7 +694,7 @@ Ship phase 1 as an internal demo. Ship phase 2 before investing in the advice en
 - **Data layer:** Rust, one workspace.
 - **Browser:** Obscura optional, embedded, pinned; not required for v1.
 - **Frontend:** TypeScript, React, `react-globe.gl`.
-- **Booking:** deeplink.
+- **Commerce:** redirect only. No checkout, payment, ticketing, changes or refunds.
 - **Advice:** empirical distributions, no ML, no advice without enough history.
 - **Point of sale:** licensed search plus official storefronts; eligibility-only, no spoofing.
 
