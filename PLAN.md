@@ -10,7 +10,7 @@ A 3D globe of airports and routes, a search console on the left, and a route pag
 
 ## 1. The product in one paragraph
 
-A traveller opens Fleet Atlas, types “Berlin” and “Lisbon,” picks a week in March, and sees the best flights ranked on total cost. The globe draws the candidate routes as arcs; hovering a result lifts its arc, clicking it frames the route and dims the rest. A second tab answers the harder question: *should I buy now?* It shows the route's price history, where today's fare sits in the distribution, what usually happens between now and departure, and a plain recommendation — buy, wait, or watch — with a confidence level. A third mode, Explore, turns the globe into a map of cheap places from your home airport.
+A traveller opens Fleet Atlas, types “Berlin” and “Lisbon,” picks a week in March, and sees the best flights ranked on total cost. The globe draws the candidate routes as arcs; hovering a result lifts its arc, clicking it frames the route and dims the rest. A second tab answers the harder question: *should I buy now?* It shows the route's price history, where today's fare sits in the distribution, what usually happens between now and departure, and a plain recommendation — buy, wait, or watch — with a confidence level. When a route looks good, it also checks whether another country storefront the traveller is eligible for beats the home price after FX and bags. A third mode, Explore, turns the globe into a map of cheap places from your home airport.
 
 ---
 
@@ -20,6 +20,7 @@ A traveller opens Fleet Atlas, types “Berlin” and “Lisbon,” picks a week
 
 - Find the best flight for a specific trip, where “best” means total cost and total time, not headline fare.
 - Tell the traveller when to buy, with route-level evidence and an honest confidence level.
+- Surface legitimate point-of-sale savings, net of FX and eligibility, without faking residency.
 - Make cheap destinations visible from one home airport, using the globe for discovery.
 - Show the route structure — airports, stops, layovers — so the price makes sense.
 - Feel fast: cached results visible immediately; live verification in the background.
@@ -198,6 +199,7 @@ A traveller opens Fleet Atlas, types “Berlin” and “Lisbon,” picks a week
 - Days-to-departure curve: what the fare usually does from here.
 - Recommendation card: BUY / WAIT / WATCH, confidence, expected change, downside.
 - Fare rules: refundable, changeable, bag inclusion.
+- **Where to book:** a short comparison of eligible storefronts with net totals and Bookable / Listed / Ineligible status. Hidden unless a material, persistent gap exists.
 - Alert threshold and “watch this route.”
 - Backtest note: “On this route, waiting beat buying in 6 of 10 similar cases.”
 
@@ -214,11 +216,31 @@ Bottom sheet with collapsed, half and full states. The globe stays full-bleed. S
 
 ---
 
-## 6. Buy/wait engine
+## 6. Finding the best price
 
-This is the product's differentiator. It must be empirical and auditable, not a black box.
+Four levers, ordered by expected value. The first two ship in v1; the third ships once search and history are reliable; the fourth is a later phase.
 
-### Data it needs
+| Lever | What it does | V1? |
+|---|---|---|
+| **Dates and airports** | Flexible dates, nearby airports, total cost | Yes |
+| **Timing** | Buy/wait on the route's own history | Yes |
+| **Point of sale** | Eligible storefronts, net of FX and payment rules | After search works |
+| **Itinerary structure** | Split tickets, positioning, open-jaw | Later |
+
+### 6.1 Dates and airports
+
+- Search the full date window, not one date.
+- Expand to up to three origin and three destination airports.
+- Price total cost with bags, seats and ground transfer.
+- Do not spend paid calls on every date; scan the calendar, then verify the shortlist.
+
+This is the cheapest lever and it needs no new data source.
+
+### 6.2 Timing and the buy/wait engine
+
+Timing is the product's main differentiator. It must be empirical and auditable, not a black box.
+
+#### Data it needs
 
 - Daily minimum price for the route and travel date, collected over time.
 - Historical prices for the same route and comparable lead times.
@@ -227,7 +249,7 @@ This is the product's differentiator. It must be empirical and auditable, not a 
 - Current offer details: fare rules, bags, seats left at this price.
 - Volatility: how much the route's price moves day to day.
 
-### Output
+#### Output
 
 ```
 Recommendation: BUY
@@ -242,7 +264,7 @@ Why: below the 10th percentile, fewer than half the seats left
      at this fare, and this route rises sharply inside 21 days.
 ```
 
-### Rules
+#### Rules
 
 - Below p10 → default BUY, unless the fare rules are bad for the traveller's flexibility.
 - Between p10 and p50 → WATCH, with an alert at the p10.
@@ -252,11 +274,11 @@ Why: below the 10th percentile, fewer than half the seats left
 - Refundability changes the call: a slightly higher flexible fare can be the better buy.
 - Always show the total with bags and fees.
 
-### Confidence
+#### Confidence
 
 Confidence reflects sample size, dispersion and how well the current price fits the historical pattern. It is not a probability that the advice is correct. State that in the UI.
 
-### Backtest
+#### Backtest
 
 For every route with enough history, replay the advice at 60, 30 and 14 days out and compare it with buying at that moment. Publish:
 
@@ -266,9 +288,31 @@ For every route with enough history, replay the advice at 60, 30 and 14 days out
 
 If the advice does not beat “buy now” after costs, the product should say so and position itself as search plus alerts.
 
-### Cold start
+#### Cold start
 
 Historical prices are not freely available at route level for arbitrary past dates. Seed with Travelpayouts cached prices and any history the licensed source exposes, then collect daily. Do not issue advice until the route has enough observations. The first users will see watch pages, not recommendations — design that as a legitimate state, not an error.
+
+### 6.3 Point of sale
+
+The same physical flight can be cheaper on another country's storefront. The app should check the ones the traveller can actually use.
+
+**Screening.** For a shortlisted itinerary, run the same search across three to five markets: departure country, destination country, US, UK, and one competitive low-fare market. SerpAPI's Google Flights endpoint accepts `gl` (country), `hl` (language) and `currency`; deep-link to the airline's local storefront to confirm.
+
+**Eligibility.** Store residency, nationality, the countries where the traveller holds a card or account, and the payment methods they can use. No card numbers, no addresses. Label every row:
+
+- **Bookable** — fare rules and payment requirements match.
+- **Listed, unconfirmed** — visible price, but a local card or billing address may be required.
+- **Ineligible** — residency-restricted or local-payment-only.
+
+**Net total.** Fare + bags + seats + booking fee + card FX fee + forced conversion + ground transfer. Convert at the card's rate, not the airline's marketing rate.
+
+**Threshold.** Recommend a foreign storefront only when the net gap is above €20 or 5%, whichever is higher, and has persisted for several days, and the fare rules are equivalent.
+
+**Guardrails.** No VPN or proxy to fake residency. No fabricated billing addresses. No borrowed cards. No promise of the final price until the payment step. The full mechanics, evidence and rollout are in [docs/13-point-of-sale.md](docs/13-point-of-sale.md).
+
+### 6.4 Itinerary structure (later)
+
+Split tickets, positioning flights and open-jaws can beat a through fare, but they create separate contracts and connection risk. They belong in a later phase, behind clear risk badges and a buffer rule. The tactics and thresholds are in [docs/04-playbook.md](docs/04-playbook.md).
 
 ---
 
@@ -328,11 +372,13 @@ Rules:
                             │ HTTPS / JSON
 ┌───────────────────────────▼──────────────────────────────────┐
 │ crates/api — Rust (Axum + Tokio)                             │
-│  /places /routes /search /route-intel /explore /alerts        │
+│  /places /routes /search /route-intel /price-check            │
+│  /explore /alerts                                             │
 │  search → sources → normalizer → ranker → verifier            │
 │       ├─ SerpAPI / SearchApi (Google Flights)                 │
 │       ├─ Travelpayouts (cached baselines)                     │
 │       ├─ Duffel (booking links)                               │
+│       ├─ multi-storefront POS screening (gl/hl/currency)      │
 │       └─ Obscura (optional, browser-bound sources)            │
 │  SQLite / Postgres: offers, history, ledger, quota            │
 └──────────────────────────────────────────────────────────────┘
@@ -394,6 +440,31 @@ CREATE TABLE fare_history (
 
 The daily minimum is the signal. Do not store every quote; store the minimum and the offer that produced it.
 
+### Point of sale
+
+One row per storefront, itinerary and observation:
+
+```sql
+CREATE TABLE pos_quotes (
+  route             TEXT,
+  travel_date       TEXT,
+  storefront_country TEXT,
+  currency          TEXT,
+  fare              REAL,
+  bags              REAL,
+  fees              REAL,
+  fx_fee            REAL,
+  net_total         REAL,
+  status            TEXT,   -- bookable | listed | ineligible
+  fare_rules        TEXT,
+  observed_at       TEXT,
+  expires_at        TEXT,
+  PRIMARY KEY (route, travel_date, storefront_country, observed_at)
+);
+```
+
+The eligibility profile stays on the client or in a local table — residency, nationality, card countries, payment methods. No card numbers, no billing addresses.
+
 ### Cache
 
 | Data | TTL |
@@ -403,6 +474,7 @@ The daily minimum is the signal. Do not store every quote; store the minimum and
 | Search results | 10 minutes |
 | Offer detail | Until `expires_at`, max 30 minutes |
 | Route history | Daily rollup, updated once a day |
+| POS quotes | 6 hours |
 | Explore feed | 6 hours |
 
 ---
@@ -413,7 +485,8 @@ The daily minimum is the signal. Do not store every quote; store the minimum and
 2. Query the air source for the date range and passenger/bag parameters.
 3. Normalize every offer into one schema; fingerprint by physical service.
 4. Drop duplicates; keep the lowest verified total.
-5. Rank by generalized cost:
+5. For a point-of-sale check, screen three to five eligible storefronts and compute the net total for each, including FX and bags.
+6. Rank by generalized cost, using the net total rather than the headline fare:
 
 ```
 score = total price
@@ -422,8 +495,8 @@ score = total price
       + risk_premium
 ```
 
-6. Verify the top N at the source; mark the rest indicative.
-7. Return itineraries plus the route snapshot for the intelligence tab.
+7. Verify the top N at the source; mark the rest indicative.
+8. Return itineraries plus the route snapshot and any eligible storefront comparison.
 
 Defaults: value of time €15/hour; stop penalty €25 per stop; risk premium €40 for a self-transfer and €25 for an OTA-only fare. All adjustable behind “advanced.”
 
@@ -459,6 +532,27 @@ type Itinerary = {
   risk: Array<'self-transfer' | 'ota-only' | 'hidden-city'>;
 };
 
+type PosQuote = {
+  storefrontCountry: string;
+  currency: string;
+  fare: number;
+  bags: number;
+  fees: number;
+  fxFee: number;
+  netTotal: number;
+  status: 'bookable' | 'listed' | 'ineligible';
+  fareRulesEquivalent: boolean;
+  bookingUrl: string;
+  observedAt: string;
+};
+
+type EligibilityProfile = {
+  residency: string;
+  nationality: string;
+  cardCountries: string[];
+  paymentMethods: string[];
+};
+
 type RouteSnapshot = {
   route: string;
   travelDate: string;
@@ -479,6 +573,7 @@ type RouteSnapshot = {
 // GET  /api/routes?origin=airport:BER&limit=20
 // POST /api/search
 // GET  /api/route-intel?from=BER&to=LIS&date=2027-03-01
+// POST /api/price-check   { itineraryId, profile }
 // GET  /api/explore?home=BER&month=2027-03
 // POST /api/alerts
 ```
@@ -497,6 +592,7 @@ fleet/
    ├─ crates/
    │  ├─ core/          types, geo, rank, percentiles, fingerprint
    │  ├─ sources/       serpapi, travelpayouts, duffel, mcp
+   │  ├─ pos/           multi-storefront screening, eligibility, net total
    │  ├─ browser/       optional Obscura pool
    │  ├─ store/         SQLite/Postgres, history, quota
    │  ├─ api/           Axum routes
@@ -518,8 +614,9 @@ fleet/
 | **2 — Air data** (5–7 days) | Rust API, places, route previews, SerpAPI adapter, cache, quota, verification | Real BER–LIS results with total price, bags and a verified timestamp |
 | **3 — History collection** (3–4 days) | Daily scheduler, `fare_history`, percentiles, route snapshot endpoint | A route accumulates daily minima and returns p10/p50/p90 |
 | **4 — Buy/wait** (4–6 days) | Curve, recommendation rules, confidence, backtest, route-intelligence panel | A recommendation is shown only with enough data; the backtest is visible |
-| **5 — Explore** (3–4 days) | Home airport, cheap-destination feed, arc colouring, destination cards | The globe shows the cheapest destinations from one airport with percentile labels |
-| **6 — Alerts and polish** (4–6 days) | Watchlist, alert thresholds, mobile bottom sheet, accessibility, reduced motion | A saved route notifies on a new low; mobile works one-handed |
+| **5 — Point of sale** (4–6 days) | Eligibility profile, three-to-five storefront screening, net total, status labels, comparison table | A route shows a bookable storefront comparison, or explicitly says the home storefront is best |
+| **6 — Explore** (3–4 days) | Home airport, cheap-destination feed, arc colouring, destination cards | The globe shows the cheapest destinations from one airport with percentile labels |
+| **7 — Alerts and polish** (4–6 days) | Watchlist, alert thresholds, mobile bottom sheet, accessibility, reduced motion | A saved route notifies on a new low; mobile works one-handed |
 
 Ship phase 1 as an internal demo. Ship phase 2 before investing in the advice engine; without reliable prices the advice is noise.
 
@@ -568,6 +665,10 @@ Ship phase 1 as an internal demo. Ship phase 2 before investing in the advice en
 | Airport/label clutter | Cap labels and arcs by traffic; show more on zoom |
 | Anti-meridian arcs | Split at ±180°; test long routes |
 | Scraping/ToS | Licensed sources only for displayed prices; no Google/Southwest/easyJet scraping |
+| POS feature becomes residency spoofing | Compare only storefronts the traveller is eligible for; no VPN, fake billing address or borrowed card |
+| FX fee erases the POS gap | Compute net total at the card rate; show only gaps above €20 or 5% |
+| Listed POS price fails at payment | Label “listed, unconfirmed”; never promise the final price |
+| Foreign storefront after-sales | Show the ticketing country and refund path; warn when support is harder |
 | Obscura limits | Optional; does not beat active bot protection; keep a fallback |
 | Data licensing | Attribute OurAirports, OpenFlights, OSM |
 
@@ -583,6 +684,7 @@ Ship phase 1 as an internal demo. Ship phase 2 before investing in the advice en
 - **Frontend:** TypeScript, React, `react-globe.gl`.
 - **Booking:** deeplink.
 - **Advice:** empirical distributions, no ML, no advice without enough history.
+- **Point of sale:** licensed search plus official storefronts; eligibility-only, no spoofing.
 
 ### Still open
 
@@ -590,8 +692,10 @@ Ship phase 1 as an internal demo. Ship phase 2 before investing in the advice en
 2. **Live or fixtures:** fixtures for the interaction, or live SerpAPI from the start?
 3. **Visual direction:** realistic Blue Marble or a stylised dark globe.
 4. **Advice policy:** how aggressive should BUY be below p10? How much weight on refundability?
-5. **Budget:** SerpAPI cap and hosting.
-6. **Name:** “Fleet Atlas” is a working title.
+5. **POS markets:** which three to five storefronts to screen by default, and whether the traveller can add their own.
+6. **POS threshold:** €20 or 5% — or a different rule for premium cabins.
+7. **Budget:** SerpAPI cap and hosting.
+8. **Name:** “Fleet Atlas” is a working title.
 
 ---
 
