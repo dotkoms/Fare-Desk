@@ -2,6 +2,8 @@
 
 **Decision:** build the data layer in Rust, and use [Obscura](https://github.com/h4ckf0r0day/obscura) as the headless browser for the sources that need one. The web frontend stays TypeScript.
 
+**Scope note:** the app's v1 is **flights only**. Rail and coach entries stay in this document because the data-layer architecture is shared and they are the next expansion. See [../PLAN.md](../PLAN.md).
+
 This keeps the whole backend — API clients, GTFS ingest, scraping, normalization, ranking, caching and quota — in one Rust workspace, with no Node or Python sidecar for rendering.
 
 ---
