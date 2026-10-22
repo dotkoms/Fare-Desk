@@ -231,7 +231,7 @@ Rules:
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│ apps/web — React + TypeScript + Vite                         │
+│ web/ — React + TypeScript + Vite                             │
 │                                                              │
 │  SearchPanel   GlobeScene   ResultList   DetailDrawer        │
 │       │            │            │             │              │
@@ -241,35 +241,39 @@ Rules:
 └───────────────────────────┬──────────────────────────────────┘
                             │ HTTPS / JSON
 ┌───────────────────────────▼──────────────────────────────────┐
-│ apps/api — Fastify + TypeScript                              │
+│ crates/api — Rust (Axum + Tokio)                             │
 │                                                              │
 │  /places   /routes   /search   /itineraries/:id   /meta      │
 │                                                              │
-│  search service → adapters → normalizer → ranker → verifier   │
+│  search service → sources → normalizer → ranker → verifier    │
 │       │              │                                       │
-│       │              ├─ SerpAPI (Google Flights)             │
-│       │              ├─ Travelpayouts (baselines)            │
-│       │              ├─ Transitous / GTFS (rail)             │
+│       │              ├─ SerpAPI, Travelpayouts, Duffel       │
+│       │              ├─ DB, Darwin, Transitous, GTFS         │
+│       │              ├─ Obscura pool (JS/SPA collectors)     │
 │       │              └─ operator deeplinks (prices)          │
 │       │                                                      │
-│       └─ SQLite / Redis cache + quota broker                  │
+│       └─ SQLite / Postgres cache + quota broker               │
 └──────────────────────────────────────────────────────────────┘
 ```
+
+Obscura is embedded as a Rust crate, not run as a separate Node service. The full feed inventory and browser policy are in [docs/12-rust-data-layer.md](docs/12-rust-data-layer.md).
 
 ### Why this split
 
 - Browser never holds API keys.
 - The API normalises every source into one itinerary shape, so the globe never knows whether a leg came from Google Flights or a GTFS feed.
+- Browser-bound collectors sit behind the same `FareSource` trait, so an Obscura result is normalized exactly like an API result.
 - Caching and quotas live in one place.
 - The web app can run against fixtures for design work.
 
 ### Stack
 
 - **Web:** React 19, TypeScript, Vite, `react-globe.gl`, Three.js, Zustand, TanStack Query, Tailwind CSS, Radix primitives for the combobox and date picker.
-- **API:** Fastify, TypeScript, Zod for validation, SQLite for local cache and quota state, optional Redis for a deployed instance.
-- **Shared:** `packages/core` for types, great-circle math, fingerprinting, ranking and total-cost logic.
-- **Testing:** Vitest, Testing Library, Playwright.
-- **Deploy:** static web on Vercel/Cloudflare; API on Fly.io/Render with a persistent volume for SQLite, or Postgres if multi-instance.
+- **API:** Rust, Axum, Tokio, Serde, `quick-xml`; SQLx with SQLite locally and Postgres when deployed.
+- **Browser:** [Obscura](https://github.com/h4ckf0r0day/obscura) embedded as a Rust crate for JS-heavy and session-bound sources; pinned tag, non-root container, egress allowlist.
+- **Shared:** `crates/core` for types, great-circle math, fingerprinting, ranking and total-cost logic.
+- **Testing:** `cargo test` for the data layer; Vitest and Testing Library for the panel; Playwright for end-to-end.
+- **Deploy:** static web on Vercel/Cloudflare; the Rust API and Obscura in one container on Fly.io/Render, with a persistent volume for SQLite, or Postgres if multi-instance.
 
 ---
 
@@ -297,8 +301,9 @@ Filter airports to those with scheduled service. A globe with 40,000 private air
 | Rail | Transitous | Routing and schedules |
 | Rail | Operator deeplinks | Prices and booking |
 | Rail | Omio affiliate | Fallback prices and deeplinks |
+| Browser-bound | Obscura | JS rendering, SPA JSON capture, sessions |
 
-**Never scrape Google, Southwest or easyJet in production.** Use SerpAPI or a licensed source. See [docs/03-public-apis-vs-scraping.md](docs/03-public-apis-vs-scraping.md).
+**Never scrape Google, Southwest or easyJet in production.** Use SerpAPI or a licensed source. See [docs/03-public-apis-vs-scraping.md](docs/03-public-apis-vs-scraping.md). Obscura's role, limits and integration pattern are in [docs/12-rust-data-layer.md](docs/12-rust-data-layer.md).
 
 ### Geometry
 
@@ -410,11 +415,16 @@ fleet/
 ├─ docs/                        ← research and reference
 ├─ agents/                      ← fare-hunting subagents
 └─ app/                         ← implementation (new)
-   ├─ apps/
-   │  ├─ web/
-   │  └─ api/
-   ├─ packages/
-   │  └─ core/
+   ├─ Cargo.toml
+   ├─ crates/
+   │  ├─ core/                 types, geo, rank, fingerprint
+   │  ├─ sources/              one adapter per feed
+   │  ├─ browser/              Obscura pool and page helpers
+   │  ├─ store/                SQLite/Postgres, ledger, quota
+   │  ├─ api/                  Axum routes
+   │  └─ scheduler/            watchlist and refreshes
+   ├─ web/                     React + react-globe.gl
+   ├─ sidecar/                 optional Playwright fallback only
    └─ data/
       ├─ airports.json
       ├─ stations.json
@@ -431,7 +441,8 @@ Keep the app in a subdirectory so the research docs stay readable and the app ca
 |---|---|---|
 | **0 — Globe spike** (2–3 days) | React app, `react-globe.gl`, 1,000 airports, 500 arcs, click/hover, camera flight | 60fps on desktop and a mid-range phone; arcs are clickable; no label clutter |
 | **1 — Search shell** (3–4 days) | Left panel, combobox, date range, mode toggles, mock search, result cards, selection highlighting | A user can search a fixture route, hover a card, see the arc lift, and click to frame it |
-| **2 — Air data** (4–6 days) | Places API, route previews, SerpAPI adapter, cache, quota broker, verification | Real BER–LIS results with total price, bags and a verified timestamp |
+| **2 — Air data** (5–7 days) | Rust API, places, route previews, SerpAPI adapter, cache, quota broker, verification | Real BER–LIS results with total price, bags and a verified timestamp |
+| **2b — Obscura collector** (3–5 days, optional) | Embedded Obscura pool, JSON-response capture, one JS-heavy source | One browser-bound source produces structured offers without DOM scraping |
 | **3 — Rail data** (4–6 days) | Transitous routing, station dataset, GTFS shapes, path layer, rail result cards | A rail itinerary renders on actual track geometry and can be selected |
 | **4 — Mixed itineraries** (4–6 days) | Segment combination, airport–station connectors, generalized-cost ranking, compare tray | A mixed air+rail itinerary is ranked and rendered with both modes visible |
 | **5 — Polish** (3–5 days) | Mobile bottom sheet, empty/loading/error states, accessibility, reduced motion, shareable URLs | Works one-handed on a phone; keyboard and screen-reader paths exist |
@@ -469,6 +480,8 @@ Ship phase 1 as an internal demo before wiring live data. The interaction is the
 - **Visual:** screenshot the globe with 1, 10 and 300 arcs; check arc colours in light and dark.
 - **Accessibility:** axe on the panel and result list; keyboard-only pass.
 - **Data:** fixture search responses for air, rail and mixed; a contract test per adapter.
+- **Browser:** a fixture page served locally, captured through Obscura with network access blocked; assert the JSON capture and timeout path.
+- **Security:** an egress test proving the browser container cannot reach an unlisted host.
 
 ---
 
@@ -484,21 +497,33 @@ Ship phase 1 as an internal demo before wiring live data. The interaction is the
 | Prices differ from the operator | Verify before display; show “price changed” rather than a stale number |
 | API cost blows up | Quota broker, cached previews, paid verification only for the shortlist |
 | Scraping/ToS | Licensed sources only in production; no Google, Southwest or easyJet scraping |
+| Obscura cannot beat active bot protection | Its own docs exclude Cloudflare interactive challenges, Akamai/Datadome and CAPTCHAs. Treat those sources as unreachable; use a partner API or drop them |
+| Obscura is young (v0.1.x) | Pin a release tag; wrap it behind `crates/browser`; keep a Playwright sidecar as a fallback for one or two sources |
+| Untrusted page JavaScript runs in process | Non-root container, read-only root, egress allowlist, no credentials, bounded page time and size |
 | Date-line arcs break the camera | Split geometries at ±180°; test Auckland–Santiago and Tokyo–Honolulu |
 | Accessibility of a 3D canvas | The list is complete without the globe; keyboard and screen-reader paths |
 | Data licensing | Attribute OurAirports, OpenFlights, OSM and GTFS feeds in an “About data” panel |
 
 ---
 
-## 15. Decisions needed before building
+## 15. Decisions
+
+### Decided
+
+- **Data layer:** Rust, one workspace.
+- **Browser:** Obscura, embedded via its Rust crate, wrapped in `crates/browser`.
+- **Frontend:** TypeScript, React, `react-globe.gl`.
+- **Booking:** deeplink to the operator; no in-app checkout.
+- **Price policy:** a price is displayed only after verification at the source.
+
+### Still open
 
 1. **Coverage:** global air, or a regional launch? Which rail markets in v1 — UK, Western Europe, Japan, US, or all four?
 2. **Live or demo:** should the first build use fixtures, or go straight to SerpAPI? Fixtures let the interaction ship faster; live data changes the loading and error design.
 3. **Visual direction:** realistic Blue Marble globe, or a stylised dark globe with simplified landmasses? The latter is cheaper and more distinctive; the former is more legible.
-4. **Booking:** deeplink only, or an in-app checkout later? Deeplink is the v1 answer.
-5. **Price display:** show indicative prices from cache, or verified only? Verified only is slower but honest.
-6. **Hosting and budget:** a SerpAPI cap per month, and whether the API runs locally or deployed.
-7. **Name:** “Fleet Atlas” is a working title.
+4. **Price display:** show indicative prices from cache, or verified only? Verified only is slower but honest.
+5. **Hosting and budget:** a SerpAPI cap per month, and whether the API runs locally or deployed.
+6. **Name:** “Fleet Atlas” is a working title.
 
 ---
 

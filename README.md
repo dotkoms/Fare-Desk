@@ -19,6 +19,7 @@ A field manual for paying less for planes, trains and coaches — the data sourc
 | Build the agent fleet | [docs/08-agent-fleet.md](docs/08-agent-fleet.md) and [agents/](agents/) |
 | Avoid wasting time on myths | [docs/07-myths.md](docs/07-myths.md) |
 | Build the interactive 3D map app | [PLAN.md](PLAN.md) |
+| Decide what is an API and what needs a browser | [docs/12-rust-data-layer.md](docs/12-rust-data-layer.md) |
 
 If you only do three things: search the whole week and every nearby airport, run a split-ticket check before buying rail, and price the trip door to door including bags and the hotel night you are replacing.
 
@@ -42,7 +43,8 @@ fleet/
 │  ├─ 08-agent-fleet.md            Architecture, schemas, quotas, guardrails
 │  ├─ 09-build-order.md            Build it in phases
 │  ├─ 10-points-and-protections.md Points math, EU261, refunds, OTA risk
-│  └─ 11-sources.md                Evidence and uncertainty
+│  ├─ 11-sources.md                Evidence and uncertainty
+│  └─ 12-rust-data-layer.md        Rust feeds, API vs scrape, Obscura
 └─ agents/
    ├─ README.md                    How to install the fleet
    ├─ desk-ops.md
