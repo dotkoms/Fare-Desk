@@ -153,7 +153,7 @@ Daily cron, 06:07:
 7 6 * * * cd /srv/faredesk/app && /usr/local/bin/faredesk-collector --watchlist /srv/faredesk/data/watchlist.yaml >> /var/log/faredesk-collector.log 2>&1
 ```
 
-`GET /api/route-intel` reads that history. It returns `recommendation: "insufficient"` under 14 observations; once the sample is large enough it returns the statistics with `recommendation: null` until the Step 5 buy/wait engine lands. It always carries the `fare-history` data card, sample size and observation window.
+`GET /api/route-intel` reads that history and runs the buy/wait engine: below p10 books now; p10–p50 watches; above the median with more than 45 days to go waits; inside 14 days never promises a late drop; under 14 observations says `insufficient`. It returns the expected 7- and 21-day ranges from observed moves, the downside chance, the lead-time curve, a backtest at 60/30/14 days out when enough completed history exists, plain-language reasons and one line on what would change the call. The track record stays null until the engine has made calls it can score. Every response carries the `fare-history` data card, sample size and observation window.
 
 ## Errors
 
@@ -202,7 +202,7 @@ CI runs `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, the fu
 
 ```bash
 cd app
-cargo test          # 80 tests
+cargo test          # 87 tests
 cargo clippy --all-targets
 ```
 
@@ -214,5 +214,5 @@ The integration tests in `crates/api/tests/api.rs` run the real router against a
 - **Bag fees can be estimates.** When the source says a bag costs extra without naming the amount, the curated table in `core::pricing` is used and `bagFeeEstimated` is true.
 - **Children are priced at the adult fare.**
 - **The web app prices from this service but still holds its own demo history.** The buy/wait panel is fixture intelligence until Step 5.
-- **No scheduler yet.** History is written by live searches; Step 4 adds the daily collector.
+- **History needs a key and time.** The collector writes only from a live source; a route needs 14 daily observations before advice appears.
 - **No point-of-sale screening, no alerts, no auth or rate limiting.** Those are Steps 6, 8 and a deployment concern.

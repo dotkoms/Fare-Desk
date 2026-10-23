@@ -4,7 +4,7 @@ A 3D globe of airports and routes, a search console on the left, and a route pag
 
 **Scope:** flights only. Trains and coaches are future work, not v1.
 
-**Status:** Steps 1–4 of [22-build-planner.md](docs/22-build-planner.md) are built. `app/web` holds the list-first shell and globe; `app/crates` holds the data plane (places, search, reference data, cache, quota, provenance) and the daily history collector. `GET /api/route-intel` returns daily minima, percentiles, sample and window. Next: the Step 5 buy/wait engine and wiring route-intel into the web app; the buy/wait panel still uses demo history. Live fares need `SERPAPI_KEY`. [docs/23-2d-poster-map.md](docs/23-2d-poster-map.md) proposes replacing the 3D globe with a flat poster map; the decision is open.
+**Status:** Steps 1–5 of [22-build-planner.md](docs/22-build-planner.md) are built. `app/web` holds the list-first shell and globe; `app/crates` holds the data plane (places, search, reference data, cache, quota, provenance) and the daily history collector. `GET /api/route-intel` returns daily minima, percentiles, sample and window. The Step 5 buy/wait engine is built behind `/api/route-intel` (rules, expected ranges, downside, curve, backtest, reasons). Next: wire route-intel into the web app; the buy/wait panel still uses demo history. Live fares need `SERPAPI_KEY`. [docs/23-2d-poster-map.md](docs/23-2d-poster-map.md) proposes replacing the 3D globe with a flat poster map; the decision is open.
 
 ---
 

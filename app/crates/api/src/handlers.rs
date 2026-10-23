@@ -11,11 +11,11 @@ use chrono::{DateTime, Duration, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use faredesk_core::{
-    apply_scores, fingerprint, percentile, percentile_rank, price_offer, sort_itineraries, Cabin,
-    Coverage, DataCard, Dataset, Freshness, FxResponse, HistoryPoint, Holiday, HolidaysResponse,
-    Itinerary, ObservationWindow, Place, PlacesResponse, Provenance, Provider, ProvidersResponse,
-    Recommendation, RouteIntel, RouteIntelResponse, RouteSummary, RoutesResponse, SearchQuery,
-    SearchResponse, SearchSnapshot, Sort,
+    advise, apply_scores, fingerprint, percentile, percentile_rank, price_offer, sort_itineraries,
+    AdviceInput, Cabin, Coverage, DataCard, Dataset, Freshness, FxResponse, HistoryPoint, Holiday,
+    HolidaysResponse, Itinerary, Observation, ObservationWindow, Place, PlacesResponse, Provenance,
+    Provider, ProvidersResponse, Recommendation, RouteIntel, RouteIntelResponse, RouteSummary,
+    RoutesResponse, SearchQuery, SearchResponse, SearchSnapshot, Sort, MIN_OBSERVATIONS,
 };
 use faredesk_sources::{fixtures, ResolvedQuery, SourceError};
 use faredesk_store::{Cached, QuotaOutcome};
@@ -239,8 +239,6 @@ pub async fn routes(
 // Route intelligence
 // ---------------------------------------------------------------------------
 
-const MIN_OBSERVATIONS: u32 = 14;
-
 #[derive(Debug, Deserialize)]
 pub struct RouteIntelParams {
     pub from: Option<String>,
@@ -301,11 +299,6 @@ pub async fn route_intel(
     let p10 = percentile(&sorted, 10.0);
     let p90 = percentile(&sorted, 90.0);
     let sample_size = rows.len();
-    let recommendation = if sample_size < MIN_OBSERVATIONS as usize {
-        Some(Recommendation::Insufficient)
-    } else {
-        None
-    };
     let window = match (rows.first(), rows.last()) {
         (Some((from_date, _)), Some((to_date, _))) => Some(ObservationWindow {
             from: *from_date,
@@ -314,13 +307,59 @@ pub async fn route_intel(
         }),
         _ => None,
     };
-    let history = rows
+    let history: Vec<HistoryPoint> = rows
         .iter()
         .map(|(date, price)| HistoryPoint {
             date: *date,
             price: *price,
         })
         .collect();
+
+    let route_observations: Vec<Observation> = state
+        .store()
+        .db
+        .route_observations(&route)
+        .map_err(|error| ApiError::internal(format!("fare history: {error}")))?
+        .into_iter()
+        .map(|(travel_date, observed_on, price)| Observation {
+            travel_date,
+            observed_on,
+            price,
+        })
+        .collect();
+
+    let advice = current_price.map(|current| {
+        advise(&AdviceInput {
+            observations: &route_observations,
+            travel_date: date,
+            today: now().date_naive(),
+            current_price: current,
+            p10: p10.unwrap_or(current),
+            p50: median.unwrap_or(current),
+            sample_size,
+        })
+    });
+
+    let recommendation = advice
+        .as_ref()
+        .map(|advice| advice.recommendation)
+        .or(Some(Recommendation::Insufficient));
+    let expected7 = advice.as_ref().and_then(|advice| advice.expected7);
+    let expected21 = advice.as_ref().and_then(|advice| advice.expected21);
+    let downside = advice.as_ref().and_then(|advice| advice.downside);
+    let curve = advice
+        .as_ref()
+        .map(|advice| advice.curve.clone())
+        .unwrap_or_default();
+    let backtest = advice.as_ref().and_then(|advice| advice.backtest);
+    let reasons = advice
+        .as_ref()
+        .map(|advice| advice.reasons.clone())
+        .unwrap_or_default();
+    let change_my_mind = advice
+        .as_ref()
+        .map(|advice| advice.change_my_mind.clone())
+        .unwrap_or_default();
 
     let mut provenance = base_provenance("fare-history", "fare-history", sample_size);
     provenance.observed_at = rows
@@ -336,7 +375,9 @@ pub async fn route_intel(
     } else if sample_size < MIN_OBSERVATIONS as usize {
         format!("Collecting baseline — {sample_size} of {MIN_OBSERVATIONS} daily observations.")
     } else {
-        "History is ready; buy/wait rules ship with the next backend step.".to_string()
+        format!(
+            "Recommendation from {sample_size} observed days. Track record is not available yet."
+        )
     });
 
     Ok(Json(RouteIntelResponse {
@@ -354,6 +395,14 @@ pub async fn route_intel(
             window,
             recommendation,
             min_observations: MIN_OBSERVATIONS,
+            expected7,
+            expected21,
+            downside,
+            curve,
+            backtest,
+            track_record: None,
+            reasons,
+            change_my_mind,
         },
         provenance,
     }))

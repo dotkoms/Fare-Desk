@@ -260,6 +260,39 @@ pub struct ObservationWindow {
     pub days: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Range {
+    pub low: f64,
+    pub high: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CurvePoint {
+    pub days_out: u32,
+    pub median: f64,
+    pub p10: f64,
+    pub p90: f64,
+    pub sample: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Backtest {
+    pub cases: u32,
+    pub wait_wins: u32,
+    pub avg_saving: f64,
+    pub worst_loss: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackRecord {
+    pub correct: u32,
+    pub cases: u32,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RouteIntel {
@@ -274,9 +307,26 @@ pub struct RouteIntel {
     pub history: Vec<HistoryPoint>,
     pub sample_size: usize,
     pub window: Option<ObservationWindow>,
-    /// Null until the buy/wait engine ships; `insufficient` under the sample floor.
     pub recommendation: Option<Recommendation>,
     pub min_observations: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected7: Option<Range>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected21: Option<Range>,
+    /// Percent chance the fare is below p10 in seven days if the traveller waits.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub downside: Option<f64>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub curve: Vec<CurvePoint>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backtest: Option<Backtest>,
+    /// Null until the engine has made calls it can score.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub track_record: Option<TrackRecord>,
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub reasons: Vec<String>,
+    #[serde(skip_serializing_if = "String::is_empty", default)]
+    pub change_my_mind: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

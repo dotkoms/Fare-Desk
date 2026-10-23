@@ -211,6 +211,38 @@ impl Db {
         Ok(points)
     }
 
+    /// Every observation for a route across travel dates, oldest first.
+    pub fn route_observations(
+        &self,
+        route: &str,
+    ) -> Result<Vec<(NaiveDate, NaiveDate, f64)>, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut statement = conn.prepare(
+            "SELECT travel_date, observed_on, price
+             FROM fare_history
+             WHERE route = ?1
+             ORDER BY travel_date, observed_on",
+        )?;
+        let rows = statement.query_map(params![route], |row| {
+            let travel: String = row.get(0)?;
+            let observed: String = row.get(1)?;
+            let price: f64 = row.get(2)?;
+            Ok((travel, observed, price))
+        })?;
+
+        let mut observations = Vec::new();
+        for row in rows {
+            let (travel, observed, price) = row?;
+            if let (Ok(travel_date), Ok(observed_on)) = (
+                NaiveDate::parse_from_str(&travel, "%Y-%m-%d"),
+                NaiveDate::parse_from_str(&observed, "%Y-%m-%d"),
+            ) {
+                observations.push((travel_date, observed_on, price));
+            }
+        }
+        Ok(observations)
+    }
+
     /// The currency of the latest observation for a route and travel date.
     pub fn history_currency(
         &self,

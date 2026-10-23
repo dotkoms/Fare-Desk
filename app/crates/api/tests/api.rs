@@ -482,12 +482,25 @@ async fn route_intel_returns_percentiles_at_fourteen_days() {
     assert_eq!(intel["p90"], 111.7);
     assert_eq!(intel["percentile"], 100.0);
     assert_eq!(intel["window"]["days"], 14);
-    assert!(intel["recommendation"].is_null());
+    // Above the median with months to go: wait, with reasons and a 7-day range.
+    assert_eq!(intel["recommendation"], "wait");
+    assert!(intel["expected7"]["low"].as_f64().unwrap() > 0.0);
+    assert!(
+        intel["expected7"]["high"].as_f64().unwrap() >= intel["expected7"]["low"].as_f64().unwrap()
+    );
+    assert!(intel["expected21"].is_null());
+    assert_eq!(intel["curve"].as_array().unwrap().len(), 1);
+    assert!(intel["backtest"].is_null());
+    assert!(!intel["reasons"].as_array().unwrap().is_empty());
+    assert!(intel["changeMyMind"]
+        .as_str()
+        .unwrap()
+        .contains("sale bucket"));
     assert_eq!(intel["history"].as_array().unwrap().len(), 14);
     assert!(body["provenance"]["notes"][0]
         .as_str()
         .unwrap()
-        .contains("buy/wait rules"));
+        .contains("Track record is not available yet"));
 }
 
 #[tokio::test]
@@ -501,4 +514,51 @@ async fn route_intel_requires_a_date() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"]["code"], "missing_date");
+}
+
+#[tokio::test]
+async fn route_intel_books_when_the_fare_is_below_p10() {
+    let state = state();
+    let travel = NaiveDate::from_ymd_opt(2027, 3, 1).unwrap();
+    let first_day = NaiveDate::from_ymd_opt(2026, 10, 1).unwrap();
+    // 25 descending daily minima: today's price is the lowest in the series.
+    for offset in 0..25 {
+        state
+            .store()
+            .db
+            .record_daily_minimum(
+                "BER-LIS",
+                travel,
+                first_day + ChronoDuration::days(offset),
+                200.0 - offset as f64,
+                "EUR",
+                "serpapi",
+                "TP-1041",
+            )
+            .unwrap();
+    }
+
+    let (status, body) = call(
+        app(state),
+        "GET",
+        "/api/route-intel?from=BER&to=LIS&date=2027-03-01",
+        None,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    let intel = &body["intel"];
+    assert_eq!(intel["sampleSize"], 25);
+    assert_eq!(intel["recommendation"], "buy");
+    assert_eq!(intel["percentile"], 4.0);
+    assert!(intel["reasons"][0]
+        .as_str()
+        .unwrap()
+        .contains("10th percentile"));
+    // 25 points give enough 21-day moves for both ranges.
+    assert!(intel["expected7"]["low"].is_number());
+    assert!(intel["expected21"]["low"].is_number());
+    // All observations are months before departure, so no checkpoint has
+    // completed its wait yet; the backtest stays honest and null.
+    assert!(intel["backtest"].is_null());
 }
