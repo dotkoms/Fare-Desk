@@ -144,7 +144,7 @@ pub fn recommend(
                     saving,
                     persisted: true,
                     reason: format!(
-                        "{} saves €{} and the gap has persisted; the fare rules are equivalent.",
+                        "{} saves €{} and the gap has persisted; check the fare rules before booking.",
                         candidate.market, saving
                     ),
                 }
