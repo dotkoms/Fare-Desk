@@ -1,0 +1,102 @@
+{
+  "note": "Curated estimates, 2026. Times are city centre to airport in typical conditions; costs are one adult, one way, in local currency. Minimum connection times are airport guidance for a single ticket. Verify with the operator before relying on them.",
+  "airports": {
+    "BER": {
+      "cityCenter": { "lat": 52.52, "lng": 13.405 },
+      "transfers": [
+        { "mode": "train", "minutes": 30, "cost": 4.4, "currency": "EUR", "note": "Airport Express plus S-Bahn" },
+        { "mode": "taxi", "minutes": 35, "cost": 55, "currency": "EUR" }
+      ],
+      "mct": { "domestic": 30, "international": 45 }
+    },
+    "LIS": {
+      "cityCenter": { "lat": 38.7223, "lng": -9.1393 },
+      "transfers": [
+        { "mode": "metro", "minutes": 25, "cost": 2, "currency": "EUR", "note": "Red line" },
+        { "mode": "taxi", "minutes": 20, "cost": 15, "currency": "EUR" }
+      ],
+      "mct": { "domestic": 30, "international": 45 }
+    },
+    "LHR": {
+      "cityCenter": { "lat": 51.5072, "lng": -0.1276 },
+      "transfers": [
+        { "mode": "train", "minutes": 35, "cost": 12.8, "currency": "GBP", "note": "Elizabeth line" },
+        { "mode": "metro", "minutes": 50, "cost": 5.6, "currency": "GBP", "note": "Piccadilly line" },
+        { "mode": "taxi", "minutes": 50, "cost": 65, "currency": "GBP" }
+      ],
+      "mct": { "domestic": 45, "international": 60 }
+    },
+    "BCN": {
+      "cityCenter": { "lat": 41.3874, "lng": 2.1686 },
+      "transfers": [
+        { "mode": "bus", "minutes": 35, "cost": 7.25, "currency": "EUR", "note": "Aerobús" },
+        { "mode": "taxi", "minutes": 25, "cost": 35, "currency": "EUR" }
+      ],
+      "mct": { "domestic": 30, "international": 45 }
+    },
+    "JFK": {
+      "cityCenter": { "lat": 40.7128, "lng": -74.006 },
+      "transfers": [
+        { "mode": "train", "minutes": 60, "cost": 10.75, "currency": "USD", "note": "AirTrain plus subway" },
+        { "mode": "taxi", "minutes": 45, "cost": 70, "currency": "USD" }
+      ],
+      "mct": { "domestic": 45, "international": 60 }
+    },
+    "AMS": {
+      "cityCenter": { "lat": 52.3676, "lng": 4.9041 },
+      "transfers": [
+        { "mode": "train", "minutes": 17, "cost": 6.2, "currency": "EUR" }
+      ],
+      "mct": { "domestic": 40, "international": 50 }
+    },
+    "MAD": {
+      "cityCenter": { "lat": 40.4168, "lng": -3.7038 },
+      "transfers": [
+        { "mode": "metro", "minutes": 35, "cost": 3, "currency": "EUR" }
+      ],
+      "mct": { "domestic": 35, "international": 45 }
+    },
+    "FRA": {
+      "cityCenter": { "lat": 50.1109, "lng": 8.6821 },
+      "transfers": [
+        { "mode": "train", "minutes": 15, "cost": 6, "currency": "EUR", "note": "S-Bahn" }
+      ],
+      "mct": { "domestic": 45, "international": 60 }
+    },
+    "CDG": {
+      "cityCenter": { "lat": 48.8566, "lng": 2.3522 },
+      "transfers": [
+        { "mode": "train", "minutes": 35, "cost": 11.8, "currency": "EUR", "note": "RER B" }
+      ],
+      "mct": { "domestic": 45, "international": 60 }
+    },
+    "STN": {
+      "cityCenter": { "lat": 51.5072, "lng": -0.1276 },
+      "transfers": [
+        { "mode": "train", "minutes": 50, "cost": 19.9, "currency": "GBP", "note": "Stansted Express" }
+      ],
+      "mct": { "domestic": 30, "international": 40 }
+    },
+    "FCO": {
+      "cityCenter": { "lat": 41.9028, "lng": 12.4964 },
+      "transfers": [
+        { "mode": "train", "minutes": 32, "cost": 14, "currency": "EUR", "note": "Leonardo Express" }
+      ],
+      "mct": { "domestic": 35, "international": 50 }
+    },
+    "MUC": {
+      "cityCenter": { "lat": 48.1351, "lng": 11.582 },
+      "transfers": [
+        { "mode": "train", "minutes": 40, "cost": 13, "currency": "EUR", "note": "S-Bahn" }
+      ],
+      "mct": { "domestic": 35, "international": 45 }
+    },
+    "DUB": {
+      "cityCenter": { "lat": 53.3498, "lng": -6.2603 },
+      "transfers": [
+        { "mode": "bus", "minutes": 30, "cost": 7, "currency": "EUR", "note": "Aircoach" }
+      ],
+      "mct": { "domestic": 30, "international": 45 }
+    }
+  }
+}

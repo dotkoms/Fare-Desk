@@ -12,6 +12,14 @@ pub const MIN_MONTH_SAMPLE: usize = 5;
 /// Below this many observations for a travel date there is no weather call.
 pub const MIN_WEATHER_SAMPLE: usize = 5;
 
+/// 0-100 comfort: mild temperatures and few rain days score highest.
+pub fn comfort(mean_high: f64, mean_low: f64, rain_days: u32) -> u8 {
+    let mean = (mean_high + mean_low) / 2.0;
+    let temperature = 100.0 - (mean - 22.0).abs() * 4.0;
+    let rain_penalty = f64::from(rain_days) * 3.0;
+    (temperature - rain_penalty).clamp(0.0, 100.0).round() as u8
+}
+
 /// Median, p10 and p90 per travel month, oldest month first.
 pub fn seasonality(observations: &[Observation]) -> Vec<SeasonalityPoint> {
     let mut months: BTreeMap<String, Vec<f64>> = BTreeMap::new();
@@ -159,6 +167,13 @@ mod tests {
         assert_eq!(points[0].month, "2027-03");
         assert_eq!(points[0].median, 120.0);
         assert_eq!(points[0].sample, 5);
+    }
+
+    #[test]
+    fn comfort_rewards_mild_dry_months() {
+        assert_eq!(super::comfort(24.0, 18.0, 2), 90);
+        assert_eq!(super::comfort(2.0, -4.0, 10), 0);
+        assert!(super::comfort(26.0, 20.0, 8) < super::comfort(26.0, 20.0, 2));
     }
 
     #[test]

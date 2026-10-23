@@ -17,7 +17,7 @@ pub mod stats;
 pub use advice::{advise, Advice, AdviceInput, Observation, MIN_OBSERVATIONS};
 pub use contract::*;
 pub use fingerprint::fingerprint;
-pub use insights::{fare_weather, seasonality};
+pub use insights::{comfort, fare_weather, seasonality};
 pub use pos::{currency_for_country, net_total, recommend, screening_markets, status_for};
 pub use pricing::price_offer;
 pub use rank::{apply_scores, sort_itineraries};

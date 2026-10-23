@@ -567,6 +567,8 @@ pub enum Dataset {
     History,
     Pos,
     Explore,
+    Climate,
+    Access,
     Meta,
 }
 
@@ -673,4 +675,62 @@ pub struct ExploreCache {
     pub rows: Vec<ExploreRow>,
     pub coverage: ExploreCoverage,
     pub generated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClimateMonth {
+    /// 1-12.
+    pub month: u8,
+    pub mean_high: f64,
+    pub mean_low: f64,
+    pub rain_days: u32,
+    /// 0-100 comfort score; higher is more pleasant.
+    pub comfort: u8,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClimateResponse {
+    pub place: Place,
+    pub year: i32,
+    pub months: Vec<ClimateMonth>,
+    pub provenance: Provenance,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CityCenter {
+    pub lat: f64,
+    pub lng: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Transfer {
+    pub mode: String,
+    pub minutes: u32,
+    pub cost: f64,
+    pub currency: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Mct {
+    pub domestic: u32,
+    pub international: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AirportAccessResponse {
+    pub place: Place,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub city_center: Option<CityCenter>,
+    pub transfers: Vec<Transfer>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mct: Option<Mct>,
+    pub provenance: Provenance,
 }

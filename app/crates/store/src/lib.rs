@@ -1,5 +1,6 @@
 //! Reference data, the TTL cache, the quota ledger and fare history.
 
+pub mod access;
 pub mod cache;
 pub mod db;
 pub mod reference;
@@ -8,8 +9,11 @@ pub mod registry;
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
-use faredesk_core::{DataCard, ExploreCache, FxRate, Holiday, Provider, SearchSnapshot};
+use faredesk_core::{
+    ClimateMonth, DataCard, ExploreCache, FxRate, Holiday, Provider, SearchSnapshot,
+};
 
+pub use access::{access_for, access_note, AirportAccess};
 pub use cache::{Cached, TimedCache};
 pub use db::{Db, DbError, QuotaOutcome};
 pub use reference::{Reference, ReferenceError};
@@ -38,6 +42,7 @@ pub struct Store {
     pub fx_cache: TimedCache<FxRate>,
     pub holidays_cache: TimedCache<Vec<Holiday>>,
     pub explore_cache: TimedCache<ExploreCache>,
+    pub climate_cache: TimedCache<Vec<ClimateMonth>>,
     cards: Vec<DataCard>,
 }
 
@@ -54,6 +59,7 @@ impl Store {
             fx_cache: TimedCache::new(CACHE_CAPACITY),
             holidays_cache: TimedCache::new(CACHE_CAPACITY),
             explore_cache: TimedCache::new(CACHE_CAPACITY),
+            climate_cache: TimedCache::new(CACHE_CAPACITY),
             cards,
         })
     }
@@ -70,6 +76,7 @@ impl Store {
             fx_cache: TimedCache::new(CACHE_CAPACITY),
             holidays_cache: TimedCache::new(CACHE_CAPACITY),
             explore_cache: TimedCache::new(CACHE_CAPACITY),
+            climate_cache: TimedCache::new(CACHE_CAPACITY),
             cards,
         })
     }
@@ -87,6 +94,7 @@ impl Store {
             + self.fx_cache.len()
             + self.holidays_cache.len()
             + self.explore_cache.len()
+            + self.climate_cache.len()
     }
 
     pub fn sweep_cache(&self) {
@@ -94,6 +102,7 @@ impl Store {
         self.fx_cache.sweep();
         self.holidays_cache.sweep();
         self.explore_cache.sweep();
+        self.climate_cache.sweep();
     }
 
     pub fn now(&self) -> DateTime<Utc> {

@@ -1,5 +1,6 @@
 //! Fare sources and reference-data clients.
 
+pub mod climate;
 pub mod fixtures;
 pub mod reference_data;
 pub mod serpapi;

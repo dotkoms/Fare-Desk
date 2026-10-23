@@ -141,6 +141,27 @@ pub fn data_cards(airports_updated_at: DateTime<Utc>, airports_source: String) -
             ],
         ),
         card(
+            "climate-open-meteo",
+            Dataset::Climate,
+            "Open-Meteo",
+            "CC BY 4.0",
+            "Monthly normals from the last complete calendar year of daily temperatures and precipitation, aggregated per month. Comfort is a simple temperature-and-rain score, not a forecast.",
+            release,
+            &["Normals are historical; they do not predict a specific trip."],
+        ),
+        card(
+            "airport-access",
+            Dataset::Access,
+            "Curated estimates",
+            "GPL-3.0-or-later",
+            "City-centre transfer times and costs plus minimum connection times for launch airports. Estimates, not live routing or GTFS.",
+            release,
+            &[
+                "Times are typical, not live.",
+                "Minimum connection times are guidance for a single ticket; verify with the operator.",
+            ],
+        ),
+        card(
             "data-cards-registry",
             Dataset::Meta,
             "First-party registry",
@@ -188,6 +209,8 @@ mod tests {
             Dataset::History,
             Dataset::Pos,
             Dataset::Explore,
+            Dataset::Climate,
+            Dataset::Access,
             Dataset::Meta,
         ] {
             assert!(

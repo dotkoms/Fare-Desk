@@ -3,12 +3,12 @@ use std::time::Duration;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use chrono::{Duration as ChronoDuration, NaiveDate, Utc};
+use chrono::{Datelike, Duration as ChronoDuration, NaiveDate, Utc};
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
 use faredesk_api::{app, search_cache_key, AppState, Config};
-use faredesk_core::{SearchQuery, SearchSnapshot};
+use faredesk_core::{ClimateMonth, SearchQuery, SearchSnapshot};
 use faredesk_sources::fixtures::FixtureSource;
 use faredesk_sources::Source;
 
@@ -798,4 +798,72 @@ async fn explore_rejects_a_bad_month() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"]["code"], "invalid_month");
+}
+
+#[tokio::test]
+async fn airport_access_returns_transfers_and_mct() {
+    let (status, body) = call(app(state()), "GET", "/api/airport-access?airport=BER", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["place"]["code"], "BER");
+    assert_eq!(body["cityCenter"]["lat"], 52.52);
+    let transfers = body["transfers"].as_array().unwrap();
+    assert_eq!(transfers.len(), 2);
+    assert_eq!(transfers[0]["mode"], "train");
+    assert_eq!(body["mct"]["domestic"], 30);
+    assert_eq!(body["mct"]["international"], 45);
+    assert_eq!(body["provenance"]["dataCardId"], "airport-access");
+}
+
+#[tokio::test]
+async fn airport_access_is_empty_but_valid_for_uncurated_airports() {
+    let (status, body) = call(app(state()), "GET", "/api/airport-access?airport=AKL", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["transfers"].as_array().unwrap().len(), 0);
+    assert!(body["provenance"]["notes"][1]
+        .as_str()
+        .unwrap()
+        .contains("No curated access data"));
+}
+
+#[tokio::test]
+async fn airport_access_rejects_unknown_places() {
+    let (status, body) = call(app(state()), "GET", "/api/airport-access?airport=ZZZ", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"]["code"], "unknown_place");
+}
+
+#[tokio::test]
+async fn climate_uses_the_cached_normals() {
+    let state = state();
+    let year = Utc::now().year() - 1;
+    state.store().climate_cache.insert(
+        format!("climate:BER:{year}"),
+        vec![
+            ClimateMonth {
+                month: 1,
+                mean_high: 5.0,
+                mean_low: -1.0,
+                rain_days: 10,
+                comfort: 0,
+            },
+            ClimateMonth {
+                month: 7,
+                mean_high: 26.0,
+                mean_low: 16.0,
+                rain_days: 5,
+                comfort: 80,
+            },
+        ],
+        Duration::from_secs(60),
+    );
+
+    let (status, body) = call(app(state), "GET", "/api/reference/climate?place=BER", None).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["place"]["code"], "BER");
+    assert_eq!(body["year"], year);
+    assert_eq!(body["months"].as_array().unwrap().len(), 2);
+    assert_eq!(body["months"][1]["comfort"], 80);
+    assert_eq!(body["provenance"]["freshness"], "cached");
+    assert_eq!(body["provenance"]["dataCardId"], "climate-open-meteo");
 }

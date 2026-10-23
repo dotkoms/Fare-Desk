@@ -56,6 +56,8 @@ curl -s -X POST "http://127.0.0.1:8080/api/search" \
 | `GET` | `/api/reference/fx?base=&quote=` | Latest ECB reference rate, cached 24 h, bundled fallback |
 | `GET` | `/api/reference/holidays?country=&year=` | Public holidays, cached 24 h |
 | `GET` | `/api/reference/providers?airport=` | Provider registry and deep-link templates |
+| `GET` | `/api/reference/climate?place=` | Monthly temperature and rain normals with a comfort score |
+| `GET` | `/api/airport-access?airport=` | City-centre transfers (time, cost) and minimum connection times |
 | `GET` | `/api/data-card?dataset=` | The source, licence and method behind every dataset |
 
 ### Search body
@@ -166,6 +168,18 @@ Daily cron, 06:07:
 - **`GET /api/explore`** prices each destination from the home airport on the 15th of the month, one search per destination, one adult and carry-on only. Rows are sorted by total and capped at twelve; `coverage` shows priced vs attempted. The feed is cached for six hours. A price percentile appears when that route has five or more observations. Destinations come from the demo route graph; a schedule feed is required for wider coverage.
 - **Climate overlay is not built yet.** It needs Open-Meteo normals and a comfort score; Explore currently answers “cheap”, not “cheap and dry”.
 
+## Climate normals
+
+`GET /api/reference/climate?place=BER` fetches the last complete calendar year of daily temperatures and precipitation from Open-Meteo, aggregates monthly mean high, mean low and rain days, and scores comfort 0–100 from a mild-temperature target and a rain-day penalty. Normals are cached for 30 days and labelled historical; they are not a forecast. A failure returns an empty month list with a degraded reason rather than an error page. Open-Meteo is CC BY 4.0.
+
+## Airport access and connection times
+
+`GET /api/airport-access?airport=BER` returns the airport's city-centre transfers (mode, typical minutes, one-way cost in local currency) and minimum connection times for domestic and international connections.
+
+The table in [`data/access.json`](data/access.json) covers thirteen launch airports and is **curated**, not live routing: times are typical, costs are one adult one way, and MCTs are guidance for a single ticket. Every response says so and carries the `airport-access` data card. Airports without an entry return an empty list with a note, not a 404.
+
+Still missing from this step: real 30/60/90-minute isochrones (OSRM and GTFS, as in [docs/14](docs/14-cold-start-and-coverage.md)) and US BTS reliability data.
+
 ## Point of sale
 
 `POST /api/price-check` screens a shortlisted itinerary in up to five markets: departure country, destination country, US, GB and IE, deduplicated. Each market is one source search, so the endpoint is metered.
@@ -246,7 +260,7 @@ CI runs `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, the fu
 
 ```bash
 cd app
-cargo test          # 108 tests
+cargo test          # 118 tests
 cargo clippy --all-targets
 ```
 

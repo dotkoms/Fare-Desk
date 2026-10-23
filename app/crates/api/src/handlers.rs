@@ -7,7 +7,7 @@ use axum::http::StatusCode;
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::Json;
-use chrono::{DateTime, Duration, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use faredesk_core::{
@@ -20,10 +20,11 @@ use faredesk_core::{
     RoutesResponse, SearchQuery, SearchResponse, SearchSnapshot, Sort, MIN_OBSERVATIONS,
 };
 use faredesk_core::{
-    fare_weather, seasonality, ExploreCache, ExploreCoverage, ExploreResponse, ExploreRow,
-    FareWeatherResponse, SeasonalityResponse,
+    comfort, fare_weather, seasonality, AirportAccessResponse, ClimateResponse, ExploreCache,
+    ExploreCoverage, ExploreResponse, ExploreRow, FareWeatherResponse, SeasonalityResponse,
 };
 use faredesk_sources::{fixtures, ResolvedQuery, SourceError};
+use faredesk_store::{access_for, access_note};
 use faredesk_store::{Cached, QuotaOutcome};
 
 use crate::error::ApiError;
@@ -1762,6 +1763,131 @@ fn client_key(request: &Request) -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ClimateParams {
+    pub place: Option<String>,
+}
+
+pub async fn climate(
+    State(state): State<AppState>,
+    Query(params): Query<ClimateParams>,
+) -> Result<Json<ClimateResponse>, ApiError> {
+    let place_value = params.place.unwrap_or_default();
+    if place_value.trim().is_empty() {
+        return Err(ApiError::bad_request(
+            "missing_place",
+            "Give an airport, e.g. /api/reference/climate?place=BER.",
+        ));
+    }
+    let place = resolve_place(&state, &place_value)?;
+    let year = now().year() - 1;
+    let key = format!("climate:{}:{year}", place.code);
+    let ttl = std::time::Duration::from_secs(30 * 24 * 60 * 60);
+
+    if let Some(cached) = state.store().climate_cache.get(&key) {
+        let mut provenance =
+            base_provenance("climate-open-meteo", "Open-Meteo", cached.value.len());
+        provenance.freshness = Freshness::Cached;
+        provenance.observed_at = cached.stored_at;
+        provenance.age_seconds = (now() - cached.stored_at).num_seconds().max(0) as u64;
+        provenance.expires_at = Some(cached.expires_at);
+        provenance
+            .notes
+            .push(format!("Monthly normals for {year}, cached for 30 days."));
+        return Ok(Json(ClimateResponse {
+            place,
+            year,
+            months: cached.value,
+            provenance,
+        }));
+    }
+
+    match state
+        .climate_client()
+        .monthly_normals(place.lat, place.lng, year)
+        .await
+    {
+        Ok(mut months) => {
+            for month in &mut months {
+                month.comfort = comfort(month.mean_high, month.mean_low, month.rain_days);
+            }
+            state.store().climate_cache.insert(key, months.clone(), ttl);
+            let mut provenance = base_provenance("climate-open-meteo", "Open-Meteo", months.len());
+            provenance.freshness = Freshness::Live;
+            provenance.expires_at =
+                Some(now() + Duration::from_std(ttl).unwrap_or_else(|_| Duration::zero()));
+            provenance.notes.push(format!(
+                "Monthly normals for {year} from daily temperatures and precipitation. Comfort is a temperature-and-rain score, not a forecast."
+            ));
+            Ok(Json(ClimateResponse {
+                place,
+                year,
+                months,
+                provenance,
+            }))
+        }
+        Err(error) => {
+            let mut provenance = base_provenance("climate-open-meteo", "Open-Meteo", 0);
+            provenance.degraded = true;
+            provenance.degraded_reason = Some(format!(
+                "Climate normals are unavailable ({error}). The rest of the response is unaffected."
+            ));
+            Ok(Json(ClimateResponse {
+                place,
+                year,
+                months: Vec::new(),
+                provenance,
+            }))
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AccessParams {
+    pub airport: Option<String>,
+}
+
+pub async fn airport_access(
+    State(state): State<AppState>,
+    Query(params): Query<AccessParams>,
+) -> Result<Json<AirportAccessResponse>, ApiError> {
+    let airport_value = params.airport.unwrap_or_default();
+    if airport_value.trim().is_empty() {
+        return Err(ApiError::bad_request(
+            "missing_airport",
+            "Give an airport, e.g. /api/airport-access?airport=BER.",
+        ));
+    }
+    let place = resolve_place(&state, &airport_value)?;
+    let access = access_for(&place.code);
+
+    let mut provenance = base_provenance(
+        "airport-access",
+        "curated",
+        access
+            .as_ref()
+            .map(|value| value.transfers.len())
+            .unwrap_or(0),
+    );
+    provenance.notes.push(access_note().to_string());
+    if access.is_none() {
+        provenance
+            .notes
+            .push(format!("No curated access data for {} yet.", place.code));
+    }
+
+    Ok(Json(AirportAccessResponse {
+        place,
+        city_center: access.as_ref().and_then(|value| value.city_center),
+        transfers: access
+            .as_ref()
+            .map(|value| value.transfers.clone())
+            .unwrap_or_default(),
+        mct: access.as_ref().and_then(|value| value.mct),
+        provenance,
+    }))
+}
+
 fn parse_dataset(value: &str) -> Option<Dataset> {
     match value.trim().to_ascii_lowercase().as_str() {
         "fares" => Some(Dataset::Fares),
@@ -1771,6 +1897,8 @@ fn parse_dataset(value: &str) -> Option<Dataset> {
         "holidays" => Some(Dataset::Holidays),
         "providers" => Some(Dataset::Providers),
         "history" => Some(Dataset::History),
+        "climate" => Some(Dataset::Climate),
+        "access" => Some(Dataset::Access),
         "meta" => Some(Dataset::Meta),
         _ => None,
     }
