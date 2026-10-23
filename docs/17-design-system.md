@@ -289,7 +289,7 @@ Below 1.35 R, a globe shows one hemisphere and the destination can sit behind th
 - Use hairlines, whitespace and type hierarchy before boxes and shadows.
 - Keep one amber action per screen.
 - Put the total price in the largest type in the result.
-- Let the globe be dark in both themes.
+- Let the stage follow the theme: paper globe in light, night globe in dark. Never a white globe on a dark panel or the reverse.
 - Use mono for anything that aligns in a column.
 - Make “not enough data” look intentional, not broken.
 

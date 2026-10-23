@@ -15,11 +15,15 @@
   --status-ok: #067647;
   --status-warn: #b54708;
   --status-danger: #b42318;
-  --stage: #0a1724;
-  --stage-2: #0e1f2e;
-  --stage-ink: #e8eef5;
-  --stage-ink-2: #a7b5c4;
-  --stage-line: #223547;
+  --stage: #f1f5fa;
+  --stage-2: #ffffff;
+  --stage-ink: #0b1b2b;
+  --stage-ink-2: #4a5a6a;
+  --stage-line: #d6dee7;
+  --stage-grid: rgba(11, 27, 43, 0.045);
+  --stage-glow: rgba(103, 199, 240, 0.16);
+  --stage-fill: rgba(11, 27, 43, 0.035);
+  --stage-band: rgba(11, 27, 43, 0.12);
   --arc: #6f879d;
   --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
@@ -51,6 +55,10 @@
     --stage-ink: #e8eef5;
     --stage-ink-2: #a7b5c4;
     --stage-line: #223547;
+    --stage-grid: rgba(255, 255, 255, 0.03);
+    --stage-glow: rgba(103, 199, 240, 0.1);
+    --stage-fill: rgba(255, 255, 255, 0.035);
+    --stage-band: rgba(255, 255, 255, 0.14);
     --arc: #6f879d;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px rgba(0, 0, 0, 0.25);
     color-scheme: dark;
@@ -79,6 +87,10 @@
   --stage-ink: #e8eef5;
   --stage-ink-2: #a7b5c4;
   --stage-line: #223547;
+  --stage-grid: rgba(255, 255, 255, 0.03);
+  --stage-glow: rgba(103, 199, 240, 0.1);
+  --stage-fill: rgba(255, 255, 255, 0.035);
+  --stage-band: rgba(255, 255, 255, 0.14);
   --arc: #6f879d;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px rgba(0, 0, 0, 0.25);
   color-scheme: dark;
@@ -616,9 +628,9 @@ button:disabled {
   overflow: hidden;
   border-radius: 10px;
   background:
-    radial-gradient(circle at 72% 0%, rgba(103, 199, 240, 0.1), transparent 42%),
-    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    radial-gradient(circle at 72% 0%, var(--stage-glow), transparent 42%),
+    linear-gradient(var(--stage-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--stage-grid) 1px, transparent 1px),
     var(--stage);
   background-size: auto, 40px 40px, 40px 40px, auto;
   box-shadow: var(--shadow);
@@ -732,7 +744,7 @@ button:disabled {
   border: 1px solid var(--stage-line);
   border-radius: 8px;
   background:
-    radial-gradient(circle at 50% 45%, rgba(103, 199, 240, 0.08), transparent 55%),
+    radial-gradient(circle at 50% 45%, var(--stage-glow), transparent 55%),
     var(--stage-2);
 }
 
@@ -813,7 +825,7 @@ button:disabled {
   padding: 22px;
   border: 1px solid var(--stage-line);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--stage-fill);
 }
 
 .segment {
@@ -997,7 +1009,7 @@ button:disabled {
   padding: 22px;
   border: 1px solid var(--stage-line);
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--stage-fill);
 }
 
 .intel-head {
@@ -1082,7 +1094,7 @@ button:disabled {
   left: 12%;
   right: 12%;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--stage-band);
 }
 
 .range-marker {

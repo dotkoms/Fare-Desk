@@ -38,7 +38,7 @@ import * as THREE from "three";
 import land from "./data/ne_110m_land.json"; // GeoJSON FeatureCollection
 
 const paperGlobe = new THREE.MeshPhongMaterial({
-  color: "#DCE9F5",
+  color: "#C2DBEC", // paper ocean; the night globe uses #050D14
   shininess: 0,
 });
 

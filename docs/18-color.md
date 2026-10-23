@@ -2,7 +2,7 @@
 
 **Idea: three channels, never mixed.** Price, certainty and status are different questions. If green means “cheap” and green also means “verified”, the user cannot tell whether a card is a good fare or a trustworthy fare. The palette keeps them separate.
 
-The globe is low-chroma and untextured: a paper globe in light mode, a night globe in dark mode. The data is the only saturated thing on screen.
+The stage follows the theme: a paper globe on a paper stage in light mode, a night globe on a night stage in dark mode. Both are low-chroma and untextured; the data is the only saturated thing on screen.
 
 ---
 
@@ -109,13 +109,13 @@ Low-chroma, no textures, no stars, no city lights.
 
 | Element | Light — paper globe | Dark — night globe |
 |---|---|---|
-| Ocean | `#DCE9F5` | `#0A1724` |
-| Land | `#E9EEF4` | `#152536` |
-| Coastline | `#C9D4DF` | `#2A4054` |
+| Ocean | `#C2DBEC` | `#050D14` |
+| Land | `#EFF3F7` | `#101F2E` |
+| Coastline | `#9FB6C8` | `#223547` |
 | Graticule | `#C9D4DF` at 6% | `#2A4054` at 6% |
 | Arc base | `#5F7488` at 60% | `#6F879D` at 60% |
 | Selected arc | `--ink`, 2.5 px + casing | `#F8FAFC`, 2.5 px + casing |
-| Airport point | `--ink`, 2 px | `#E8EEF5`, 2 px |
+| Airport point | `--ink` endpoints, `#5F7488` others | `#F8FAFC` endpoints, `#7F93A6` others |
 | Atmosphere | 2 px rim at 12% | 2 px rim at 12% |
 
 - No NASA Blue Marble, night lights, clouds or starfield. They cost 1–4 MB, fight label contrast, imply a time of day the fare search does not have, and make the globe feel like a screensaver.
