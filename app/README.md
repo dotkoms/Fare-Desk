@@ -59,6 +59,7 @@ curl -s -X POST "http://127.0.0.1:8080/api/search" \
 | `GET` | `/api/reference/climate?place=` | Monthly temperature and rain normals with a comfort score |
 | `GET` | `/api/airport-access?airport=` | City-centre transfers (time, cost), a live OSRM driving leg and minimum connection times |
 | `GET` | `/api/door-to-door?from=&to=&date=` | Party fare plus the cheapest transfer at each end, as a door-to-door total |
+| `GET` | `/api/reliability?from=&to=&price=` | BTS on-time rate per carrier and the reliability-adjusted price |
 | `GET` | `/api/data-card?dataset=` | The source, licence and method behind every dataset |
 
 ### Search body
@@ -185,6 +186,31 @@ Search results also carry `connectionWarnings`: any connection whose layover is 
 
 Still missing from this step: true 30/60/90-minute reach isochrones (we have one representative route, not an isochrone) and US BTS reliability data with a reliability-adjusted price.
 
+## Reliability
+
+`GET /api/reliability?from=JFK&to=LAX&price=300` returns, per reporting carrier, the on-time rate, flight count and observation window from BTS On-Time Performance data, plus `adjustedPrice = price / on-time rate`. Rates below 50% are reported without an adjusted price rather than producing a misleading number.
+
+Live output after ingesting December 2025:
+
+```
+JFK-LAX  sample 867
+F9 78.6%  28 flights   adjusted €381.68
+AA 72.2% 266 flights   adjusted €415.51
+DL 69.2% 260 flights   adjusted €433.53
+B6 67.1% 313 flights   adjusted €447.09
+```
+
+Ingest a month from TranStats (about 30 MB, streaming CSV, upserts by route/carrier/month):
+
+```bash
+cd app
+cargo run -p faredesk-scheduler --bin faredesk-bts-ingest -- --year 2025 --month 12
+# or with a local archive
+cargo run -p faredesk-scheduler --bin faredesk-bts-ingest -- --file /path/to.zip
+```
+
+Run it monthly from cron. `DATABASE_PATH` selects the ledger. BTS is US reporting carriers only; cancellations and diversions are excluded, and the share is flights arriving within 15 minutes of schedule. A route with no ingested months returns an empty list with a note, not a failure. Data card: `reliability-bts` (public domain).
+
 ## Point of sale
 
 `POST /api/price-check` screens a shortlisted itinerary in up to five markets: departure country, destination country, US, GB and IE, deduplicated. Each market is one source search, so the endpoint is metered.
@@ -265,7 +291,7 @@ CI runs `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, the fu
 
 ```bash
 cd app
-cargo test          # 124 tests
+cargo test          # 133 tests
 cargo clippy --all-targets
 ```
 

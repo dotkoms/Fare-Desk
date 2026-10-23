@@ -11,6 +11,12 @@ use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use faredesk_core::{
+    adjusted_price, comfort, fare_weather, on_time_rate, seasonality, AirportAccessResponse,
+    CarrierReliability, ClimateResponse, DoorToDoorLeg, DoorToDoorResponse, ExploreCache,
+    ExploreCoverage, ExploreResponse, ExploreRow, FareWeatherResponse, ReliabilityResponse,
+    SeasonalityResponse,
+};
+use faredesk_core::{
     advise, apply_scores, currency_for_country, fingerprint, net_total, percentile,
     percentile_rank, price_offer, recommend, screening_markets, sort_itineraries, status_for,
     AdviceInput, Cabin, Coverage, DataCard, Dataset, EligibilityProfile, Freshness, FxResponse,
@@ -18,11 +24,6 @@ use faredesk_core::{
     PlacesResponse, PosQuote, PosStatus, PriceCheckResponse, Provenance, Provider,
     ProvidersResponse, Recommendation, RouteIntel, RouteIntelResponse, RouteSummary,
     RoutesResponse, SearchQuery, SearchResponse, SearchSnapshot, Sort, MIN_OBSERVATIONS,
-};
-use faredesk_core::{
-    comfort, fare_weather, seasonality, AirportAccessResponse, ClimateResponse, DoorToDoorLeg,
-    DoorToDoorResponse, ExploreCache, ExploreCoverage, ExploreResponse, ExploreRow,
-    FareWeatherResponse, SeasonalityResponse,
 };
 use faredesk_sources::{fixtures, ResolvedQuery, SourceError};
 use faredesk_store::{access_for, access_note};
@@ -2170,6 +2171,85 @@ async fn choose_transfer(
     })
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReliabilityParams {
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub price: Option<f64>,
+}
+
+pub async fn reliability(
+    State(state): State<AppState>,
+    Query(params): Query<ReliabilityParams>,
+) -> Result<Json<ReliabilityResponse>, ApiError> {
+    let origin = resolve_place(&state, params.from.as_deref().unwrap_or_default())?;
+    let destination = resolve_place(&state, params.to.as_deref().unwrap_or_default())?;
+    if origin.code == destination.code {
+        return Err(ApiError::bad_request(
+            "same_place",
+            "Origin and destination are the same airport.",
+        ));
+    }
+    let route = format!("{}-{}", origin.code, destination.code);
+    let aggregates = state
+        .store()
+        .db
+        .reliability_for(&origin.code, &destination.code)
+        .map_err(|error| ApiError::internal(format!("reliability store: {error}")))?;
+
+    let mut carriers: Vec<CarrierReliability> = aggregates
+        .into_iter()
+        .filter_map(|aggregate| {
+            let rate = on_time_rate(aggregate.on_time, aggregate.flights)?;
+            Some(CarrierReliability {
+                carrier: aggregate.carrier,
+                flights: aggregate.flights,
+                on_time: aggregate.on_time,
+                on_time_rate: rate,
+                adjusted_price: params.price.and_then(|price| adjusted_price(price, rate)),
+                window: Some(ObservationWindow {
+                    from: aggregate.first_date,
+                    to: aggregate.last_date,
+                    days: (aggregate.last_date - aggregate.first_date)
+                        .num_days()
+                        .max(0) as u32
+                        + 1,
+                }),
+            })
+        })
+        .collect();
+    carriers.sort_by(|a, b| match (a.adjusted_price, b.adjusted_price) {
+        (Some(left), Some(right)) => left.total_cmp(&right),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => b.on_time_rate.total_cmp(&a.on_time_rate),
+    });
+
+    let flights: u32 = carriers.iter().map(|carrier| carrier.flights).sum();
+    let mut provenance = base_provenance("reliability-bts", "BTS", flights as usize);
+    provenance.notes.push(
+        "US reporting carriers; cancellations and diversions are excluded. The share is flights arriving within 15 minutes of schedule."
+            .to_string(),
+    );
+    if carriers.is_empty() {
+        provenance.notes.push(format!(
+            "No BTS reliability data for {route} yet. Ingest a month with faredesk-bts-ingest."
+        ));
+    }
+    if let Some(price) = params.price {
+        provenance.notes.push(format!(
+            "Adjusted price = €{price} divided by the carrier's on-time rate; rates below 50% are not priced."
+        ));
+    }
+
+    Ok(Json(ReliabilityResponse {
+        route,
+        carriers,
+        provenance,
+    }))
+}
+
 fn parse_dataset(value: &str) -> Option<Dataset> {
     match value.trim().to_ascii_lowercase().as_str() {
         "fares" => Some(Dataset::Fares),
@@ -2181,6 +2261,7 @@ fn parse_dataset(value: &str) -> Option<Dataset> {
         "history" => Some(Dataset::History),
         "climate" => Some(Dataset::Climate),
         "access" => Some(Dataset::Access),
+        "reliability" => Some(Dataset::Reliability),
         "meta" => Some(Dataset::Meta),
         _ => None,
     }

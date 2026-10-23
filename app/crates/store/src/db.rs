@@ -10,6 +10,15 @@ pub enum DbError {
     Sqlite(#[from] rusqlite::Error),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReliabilityAggregate {
+    pub carrier: String,
+    pub flights: u32,
+    pub on_time: u32,
+    pub first_date: NaiveDate,
+    pub last_date: NaiveDate,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuotaOutcome {
     /// The call may proceed; `used` counts this call.
@@ -84,6 +93,20 @@ impl Db {
 
             CREATE INDEX IF NOT EXISTS pos_quotes_lookup
                 ON pos_quotes (route, travel_date, storefront_country, observed_at);
+
+            CREATE TABLE IF NOT EXISTS reliability (
+                origin     TEXT NOT NULL,
+                dest       TEXT NOT NULL,
+                carrier    TEXT NOT NULL,
+                month      TEXT NOT NULL,
+                flights    INTEGER NOT NULL,
+                on_time    INTEGER NOT NULL,
+                first_date TEXT NOT NULL,
+                last_date  TEXT NOT NULL,
+                PRIMARY KEY (origin, dest, carrier, month)
+            );
+
+            CREATE INDEX IF NOT EXISTS reliability_route ON reliability (origin, dest);
             "#,
         )?;
         Ok(Self {
@@ -374,6 +397,79 @@ impl Db {
         Ok(count > 0)
     }
 
+    /// Upsert monthly on-time counts per route and carrier.
+    pub fn record_reliability(
+        &self,
+        rows: &[faredesk_core::ReliabilityCount],
+    ) -> Result<usize, DbError> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        for row in rows {
+            tx.execute(
+                "INSERT INTO reliability (origin, dest, carrier, month, flights, on_time, first_date, last_date)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                 ON CONFLICT(origin, dest, carrier, month)
+                 DO UPDATE SET flights = excluded.flights, on_time = excluded.on_time,
+                               first_date = excluded.first_date, last_date = excluded.last_date",
+                params![
+                    row.origin,
+                    row.dest,
+                    row.carrier,
+                    row.month,
+                    row.flights,
+                    row.on_time,
+                    row.first_date.format("%Y-%m-%d").to_string(),
+                    row.last_date.format("%Y-%m-%d").to_string()
+                ],
+            )?;
+        }
+        tx.commit()?;
+        Ok(rows.len())
+    }
+
+    /// Summed counts per carrier for a route, across every ingested month.
+    pub fn reliability_for(
+        &self,
+        origin: &str,
+        dest: &str,
+    ) -> Result<Vec<ReliabilityAggregate>, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut statement = conn.prepare(
+            "SELECT carrier, SUM(flights), SUM(on_time), MIN(first_date), MAX(last_date)
+             FROM reliability
+             WHERE origin = ?1 AND dest = ?2
+             GROUP BY carrier
+             ORDER BY carrier",
+        )?;
+        let rows = statement.query_map(params![origin, dest], |row| {
+            let carrier: String = row.get(0)?;
+            let flights: i64 = row.get(1)?;
+            let on_time: i64 = row.get(2)?;
+            let first: String = row.get(3)?;
+            let last: String = row.get(4)?;
+            Ok((carrier, flights, on_time, first, last))
+        })?;
+
+        let mut aggregates = Vec::new();
+        for row in rows {
+            let (carrier, flights, on_time, first, last) = row?;
+            let (Ok(first_date), Ok(last_date)) = (
+                NaiveDate::parse_from_str(&first, "%Y-%m-%d"),
+                NaiveDate::parse_from_str(&last, "%Y-%m-%d"),
+            ) else {
+                continue;
+            };
+            aggregates.push(ReliabilityAggregate {
+                carrier,
+                flights: flights.max(0) as u32,
+                on_time: on_time.max(0) as u32,
+                first_date,
+                last_date,
+            });
+        }
+        Ok(aggregates)
+    }
+
     pub fn observation_count(&self, route: &str) -> Result<i64, DbError> {
         let conn = self.conn.lock().expect("db lock");
         let count = conn.query_row(
@@ -456,6 +552,39 @@ mod tests {
             Some("EUR")
         );
         assert!(db.has_observation("BER-LIS", travel, day).unwrap());
+    }
+
+    #[test]
+    fn reliability_counts_aggregate_by_carrier() {
+        let db = Db::open_in_memory().unwrap();
+        let day = NaiveDate::from_ymd_opt(2025, 12, 1).unwrap();
+        let rows = vec![
+            faredesk_core::ReliabilityCount {
+                origin: "JFK".into(),
+                dest: "LAX".into(),
+                carrier: "AA".into(),
+                month: "2025-11".into(),
+                flights: 100,
+                on_time: 80,
+                first_date: day,
+                last_date: day,
+            },
+            faredesk_core::ReliabilityCount {
+                origin: "JFK".into(),
+                dest: "LAX".into(),
+                carrier: "AA".into(),
+                month: "2025-12".into(),
+                flights: 50,
+                on_time: 45,
+                first_date: day,
+                last_date: day,
+            },
+        ];
+        assert_eq!(db.record_reliability(&rows).unwrap(), 2);
+        let aggregates = db.reliability_for("JFK", "LAX").unwrap();
+        assert_eq!(aggregates.len(), 1);
+        assert_eq!(aggregates[0].flights, 150);
+        assert_eq!(aggregates[0].on_time, 125);
     }
 
     #[test]

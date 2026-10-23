@@ -256,6 +256,7 @@ pub fn app(state: AppState) -> Router {
         .route("/reference/climate", get(handlers::climate))
         .route("/airport-access", get(handlers::airport_access))
         .route("/door-to-door", get(handlers::door_to_door))
+        .route("/reliability", get(handlers::reliability))
         .route("/data-card", get(handlers::data_cards))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),

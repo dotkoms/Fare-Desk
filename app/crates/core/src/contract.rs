@@ -572,6 +572,7 @@ pub enum Dataset {
     Explore,
     Climate,
     Access,
+    Reliability,
     Meta,
 }
 
@@ -788,4 +789,41 @@ pub struct TransitLeg {
     pub minutes: u32,
     pub transfers: u32,
     pub source: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReliabilityCount {
+    pub origin: String,
+    pub dest: String,
+    pub carrier: String,
+    /// YYYY-MM.
+    pub month: String,
+    pub flights: u32,
+    pub on_time: u32,
+    pub first_date: NaiveDate,
+    pub last_date: NaiveDate,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CarrierReliability {
+    pub carrier: String,
+    pub flights: u32,
+    pub on_time: u32,
+    /// 0-1.
+    pub on_time_rate: f64,
+    /// Price divided by the on-time rate; omitted below the 50% floor.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub adjusted_price: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window: Option<ObservationWindow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReliabilityResponse {
+    pub route: String,
+    pub carriers: Vec<CarrierReliability>,
+    pub provenance: Provenance,
 }
