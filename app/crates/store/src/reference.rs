@@ -12,7 +12,25 @@ const AIRPORTS_JSON: &str = include_str!("../../../data/airports.json");
 struct AirportFile {
     generated_at: DateTime<Utc>,
     sources: Vec<AirportSource>,
-    places: Vec<Place>,
+    places: Vec<AirportRecord>,
+}
+
+/// One dataset row: the public place plus the OurAirports size, which only
+/// ranking uses and the API does not expose.
+#[derive(Debug, Deserialize)]
+struct AirportRecord {
+    #[serde(flatten)]
+    place: Place,
+    #[serde(default)]
+    size: AirportSize,
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[serde(rename_all = "lowercase")]
+enum AirportSize {
+    Large,
+    #[default]
+    Medium,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -27,6 +45,7 @@ struct AirportSource {
 pub struct Reference {
     places: Vec<Place>,
     by_code: HashMap<String, Place>,
+    size_by_code: HashMap<String, AirportSize>,
     generated_at: DateTime<Utc>,
     sources: Vec<AirportSource>,
 }
@@ -45,14 +64,20 @@ impl Reference {
         if file.places.is_empty() {
             return Err(ReferenceError::Empty);
         }
-        let by_code = file
+        let size_by_code = file
             .places
+            .iter()
+            .map(|record| (record.place.code.clone(), record.size))
+            .collect();
+        let places: Vec<Place> = file.places.into_iter().map(|record| record.place).collect();
+        let by_code = places
             .iter()
             .map(|place| (place.code.clone(), place.clone()))
             .collect();
         Ok(Self {
-            places: file.places,
+            places,
             by_code,
+            size_by_code,
             generated_at: file.generated_at,
             sources: file.sources,
         })
@@ -113,7 +138,9 @@ impl Reference {
     }
 
     /// Search by IATA code, city, airport name or country. Code and city
-    /// prefix matches rank above name and country matches.
+    /// prefix matches rank above name and country matches; within a rank,
+    /// large airports come before medium ones, so "barc" finds Barcelona
+    /// before Barcaldine.
     pub fn search(&self, query: &str, limit: usize) -> Vec<Place> {
         let needle = query.trim().to_lowercase();
         if needle.is_empty() {
@@ -147,7 +174,12 @@ impl Reference {
                 Some((rank, place))
             })
             .collect();
-        scored.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.code.cmp(&b.1.code)));
+        let size = |place: &Place| self.size_by_code.get(&place.code).copied().unwrap_or_default();
+        scored.sort_by(|a, b| {
+            a.0.cmp(&b.0)
+                .then_with(|| size(a.1).cmp(&size(b.1)))
+                .then_with(|| a.1.code.cmp(&b.1.code))
+        });
         scored
             .into_iter()
             .take(limit)
@@ -197,6 +229,13 @@ mod tests {
         let london = reference.search("london", 10);
         assert!(london.iter().any(|place| place.code == "LHR"));
         assert!(london.iter().any(|place| place.code == "STN"));
+    }
+
+    #[test]
+    fn search_ranks_large_airports_first_within_a_match() {
+        let reference = Reference::load().unwrap();
+        let results = reference.search("barc", 5);
+        assert_eq!(results[0].code, "BCN", "{:?}", results.iter().map(|p| &p.code).collect::<Vec<_>>());
     }
 
     #[test]

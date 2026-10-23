@@ -92,7 +92,15 @@ for (const airport of Object.values(await tzRes.json())) {
   if (airport.icao) tzByIcao.set(airport.icao, airport.tz)
   if (airport.iata) tzByIata.set(airport.iata, airport.tz)
 }
-// Country names come from a static list of the countries present in the output.
+// Country names come from the runtime's CLDR data; the static list below is the fallback.
+const regionNames = new Intl.DisplayNames(['en'], { type: 'region' })
+const countryName = (iso) => {
+  try {
+    return regionNames.of(iso) || COUNTRY_NAMES[iso] || iso
+  } catch {
+    return COUNTRY_NAMES[iso] || iso
+  }
+}
 const COUNTRY_NAMES = {
   AE: 'United Arab Emirates', AR: 'Argentina', AT: 'Austria', AU: 'Australia', BE: 'Belgium',
   BG: 'Bulgaria', BR: 'Brazil', CA: 'Canada', CH: 'Switzerland', CL: 'Chile', CN: 'China',
@@ -133,12 +141,14 @@ for (const row of ourRows.slice(1)) {
     name: row[col.name],
     city,
     country: iso,
-    countryName: COUNTRY_NAMES[iso] || iso,
+    countryName: countryName(iso),
     lat,
     lng,
     timezone: tz,
     metro: METROS[code] || null,
     scheduledService: true,
+    // Ranking only: large airports win ties in place search.
+    size: type === 'large_airport' ? 'large' : 'medium',
   })
 }
 
@@ -147,7 +157,7 @@ places.sort((a, b) => a.code.localeCompare(b.code))
 const output = {
   generatedAt: new Date().toISOString(),
   sources: [
-    { name: 'OurAirports', url: OURAIRPORTS, licence: 'Public domain', fields: 'airports, coordinates, scheduled service' },
+    { name: 'OurAirports', url: OURAIRPORTS, licence: 'Public domain', fields: 'airports, coordinates, scheduled service, size' },
     { name: 'mwgg/Airports', url: TZ_SOURCE, licence: 'MIT', fields: 'IANA timezone' },
   ],
   note: 'Large and medium airports with scheduled service. Timezones joined by IATA code; airports without a timezone are omitted.',
