@@ -199,7 +199,7 @@ Total: **7–10 days**, plus a day of buffer. This replaces Step 2 of the planne
 
 1. **Projection:** Natural Earth 1 (recommended) · equirectangular for a harder horizon · Mercator for familiarity.
 2. **Framing:** framed poster inside the stage (recommended) · full-bleed edge-to-edge.
-3. **Themes:** day + dusk tied to the existing toggle (recommended) · day only.
+3. **Themes:** day only (decided 23 October 2026; dark mode is retired).
 4. **Decoration:** sky band, one sun, up to two clouds (recommended) · frame only, no motifs · none.
 5. **The old globe:** remove it (recommended) · keep it behind a toggle.
 

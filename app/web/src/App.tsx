@@ -48,21 +48,6 @@ function sortItineraries<T extends { total: number; durationMinutes: number }>(i
   return copy.sort((a, b) => bestScore(a.total, a.durationMinutes) - bestScore(b.total, b.durationMinutes))
 }
 
-type Theme = 'system' | 'light' | 'dark'
-
-function initialTheme(): Theme {
-  if (typeof window === 'undefined') return 'system'
-  const fromUrl = new URLSearchParams(window.location.search).get('theme')
-  if (fromUrl === 'light' || fromUrl === 'dark') return fromUrl
-  try {
-    const stored = window.localStorage.getItem('faredesk-theme')
-    if (stored === 'light' || stored === 'dark') return stored
-  } catch {
-    // Storage can be unavailable in private windows.
-  }
-  return 'system'
-}
-
 export default function App() {
   const [query, setQuery] = useState<Query>(initialQuery)
   const [activeQuery, setActiveQuery] = useState<Query>(initialQuery)
@@ -71,9 +56,6 @@ export default function App() {
   const [tab, setTab] = useState<'itinerary' | 'intel'>(() =>
     new URLSearchParams(window.location.search).get('tab') === 'intel' ? 'intel' : 'itinerary',
   )
-  const [theme, setTheme] = useState<Theme>(initialTheme)
-  const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
-
   const [results, setResults] = useState<Itinerary[]>([])
   const [provenance, setProvenance] = useState<Provenance | null>(null)
   const [loading, setLoading] = useState(apiEnabled)
@@ -101,13 +83,6 @@ export default function App() {
   const selected = sorted.find((itinerary) => itinerary.id === selectedId) ?? sorted[0] ?? null
   const snapshot = snapshots[route] ?? null
   const routeLabel = `${activeQuery.origin} → ${activeQuery.destination}`
-
-  useEffect(() => {
-    const query = window.matchMedia('(prefers-color-scheme: dark)')
-    const onChange = (event: MediaQueryListEvent) => setSystemDark(event.matches)
-    query.addEventListener('change', onChange)
-    return () => query.removeEventListener('change', onChange)
-  }, [])
 
   useEffect(() => {
     if (!apiEnabled) return
@@ -142,19 +117,6 @@ export default function App() {
       cancelled = true
     }
   }, [activeQuery, refreshKey])
-
-  const isDark = theme === 'dark' || (theme === 'system' && systemDark)
-
-  useEffect(() => {
-    const root = document.documentElement
-    if (theme === 'system') root.removeAttribute('data-theme')
-    else root.dataset.theme = theme
-    try {
-      window.localStorage.setItem('faredesk-theme', theme)
-    } catch {
-      // Ignore unavailable storage.
-    }
-  }, [theme])
 
   return (
     <div className="app">
@@ -196,16 +158,6 @@ export default function App() {
           notice={notice}
           onRetry={() => setRefreshKey((key) => key + 1)}
         />
-
-        <div className="console-footer">
-          <button
-            type="button"
-            className="theme-toggle"
-            onClick={() => setTheme(theme === 'system' ? 'light' : theme === 'light' ? 'dark' : 'system')}
-          >
-            Theme: {theme}
-          </button>
-        </div>
       </aside>
 
       <main className="workspace">
@@ -223,7 +175,6 @@ export default function App() {
           onSelect={setSelectedId}
           originCode={activeQuery.origin}
           destinationCode={activeQuery.destination}
-          isDark={isDark}
         />
       </main>
     </div>

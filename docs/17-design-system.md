@@ -1,5 +1,7 @@
 # Design system
 
+> **Light only (23 October 2026).** The dark theme is retired; there is no theme toggle and no system dark mode. Dark values elsewhere in this document are historical.
+
 **Concept: the instrument and the map.** A calm console beside a low-chroma globe: a paper globe in light mode, a night globe in dark mode. No satellite texture, no stars, no city lights. The data is the only saturated thing on screen. The interface should feel precise, quiet and trustworthy — closer to a departure board than a booking site.
 
 **Brand attributes:** precise, candid, calm, exploratory. Never hyped, never cute, never urgent.

@@ -1,5 +1,7 @@
 # Color
 
+> **Light only (23 October 2026).** The dark theme is retired; the app always renders the paper palette. Dark columns below are kept for history.
+
 **Idea: three channels, never mixed.** Price, certainty and status are different questions. If green means “cheap” and green also means “verified”, the user cannot tell whether a card is a good fare or a trustworthy fare. The palette keeps them separate.
 
 The stage follows the theme: a paper globe on a paper stage in light mode, a night globe on a night stage in dark mode. Both are low-chroma and untextured; the data is the only saturated thing on screen.

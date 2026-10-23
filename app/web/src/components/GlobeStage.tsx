@@ -12,7 +12,6 @@ type Props = {
   onSelect: (id: string) => void
   originCode: string
   destinationCode: string
-  isDark: boolean
 }
 
 type DirectArc = {
@@ -34,6 +33,19 @@ type PathArc = {
 const asArc = (obj: object) => obj as unknown as DirectArc
 const asPath = (obj: object) => obj as unknown as PathArc
 
+const COLORS = {
+  ocean: '#C2DBEC',
+  land: '#EFF3F7',
+  coast: '#9FB6C8',
+  atmosphere: '#9FB8C9',
+  arc: '#5F7488',
+  dim: '#B9C8D4',
+  selected: '#0B1B2B',
+  point: '#5F7488',
+  label: '#0B1B2B',
+  labelBg: 'rgba(255, 255, 255, 0.88)',
+} as const
+
 type Label = {
   code: string
   city: string
@@ -47,7 +59,6 @@ export default function GlobeStage({
   onSelect,
   originCode,
   destinationCode,
-  isDark,
 }: Props) {
   const globeRef = useRef<GlobeMethods | undefined>(undefined)
   const wrapRef = useRef<HTMLDivElement | null>(null)
@@ -59,39 +70,11 @@ export default function GlobeStage({
 
   const selected = itineraries.find((itinerary) => itinerary.id === selectedId) ?? itineraries[0] ?? null
 
-  const colors = useMemo(
-    () =>
-      isDark
-        ? {
-            ocean: '#050D14',
-            land: '#101F2E',
-            coast: '#223547',
-            atmosphere: '#223547',
-            arc: '#6F879D',
-            dim: '#3A5064',
-            selected: '#F8FAFC',
-            point: '#7F93A6',
-            label: '#E8EEF5',
-            labelBg: 'rgba(5, 13, 20, 0.78)',
-          }
-        : {
-            ocean: '#C2DBEC',
-            land: '#EFF3F7',
-            coast: '#9FB6C8',
-            atmosphere: '#9FB8C9',
-            arc: '#5F7488',
-            dim: '#B9C8D4',
-            selected: '#0B1B2B',
-            point: '#5F7488',
-            label: '#0B1B2B',
-            labelBg: 'rgba(255, 255, 255, 0.88)',
-          },
-    [isDark],
-  )
+  const colors = COLORS
 
   const globeMaterial = useMemo(
-    () => new MeshPhongMaterial({ color: colors.ocean, shininess: 0 }),
-    [colors.ocean],
+    () => new MeshPhongMaterial({ color: COLORS.ocean, shininess: 0 }),
+    [],
   )
 
   const { arcs, paths } = useMemo(() => {
@@ -199,7 +182,7 @@ export default function GlobeStage({
     if (delta > 180) delta -= 360
     if (delta < -180) delta += 360
     const lng = from.lng + delta / 2
-    globeRef.current?.pointOfView({ lat, lng, altitude: 1.7 }, 600)
+    globeRef.current?.pointOfView({ lat, lng, altitude: 2.4 }, 600)
   }, [ready, originCode, destinationCode])
 
   if (!webgl) {

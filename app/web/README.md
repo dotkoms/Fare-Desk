@@ -29,7 +29,7 @@ cp .env.example .env.local
 - Route strip, itinerary detail and the buy/wait preview (the preview is still demo history).
 - The globe stage with land, airports, direct arcs, one-stop paths and selection sync with the list.
 - A provenance badge in the header: `Live data`, `Cached data`, `Stale data` or `Demo data`, with the data card and any degradation reason on hover.
-- Light/dark theme toggle; `?theme=light` and `?tab=intel` are available for screenshots.
+- Light only; `?tab=intel` is available for screenshots.
 - Fixture routes: BER–LIS, BER–LHR, BER–BCN, BER–JFK.
 
 Every itinerary shows `Verified N min ago` only when the source provided a verification time. Fixtures show `Demo fare` instead, and the stage says `Demo fare — not verified`.
