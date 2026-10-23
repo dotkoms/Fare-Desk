@@ -18,6 +18,7 @@ use tower_http::trace::TraceLayer;
 use faredesk_core::SearchQuery;
 use faredesk_sources::climate::ClimateClient;
 use faredesk_sources::fixtures::FixtureSource;
+use faredesk_sources::ground::GroundClient;
 use faredesk_sources::reference_data::ReferenceClient;
 use faredesk_sources::serpapi::SerpApiSource;
 use faredesk_sources::Source;
@@ -39,6 +40,7 @@ struct Inner {
     serpapi: Option<Arc<Source>>,
     reference_client: ReferenceClient,
     climate_client: ClimateClient,
+    ground_client: GroundClient,
     limiter: RateLimiter,
     started_at: DateTime<Utc>,
 }
@@ -72,6 +74,7 @@ impl AppState {
                 serpapi: serpapi.map(Arc::new),
                 reference_client: ReferenceClient::new(),
                 climate_client: ClimateClient::new(),
+                ground_client: GroundClient::new(),
                 limiter,
                 started_at: Utc::now(),
             }),
@@ -104,6 +107,7 @@ impl AppState {
                 serpapi,
                 reference_client: ReferenceClient::new(),
                 climate_client: ClimateClient::new(),
+                ground_client: GroundClient::new(),
                 limiter,
                 started_at: Utc::now(),
             }),
@@ -132,6 +136,10 @@ impl AppState {
 
     pub fn climate_client(&self) -> &ClimateClient {
         &self.inner.climate_client
+    }
+
+    pub fn ground_client(&self) -> &GroundClient {
+        &self.inner.ground_client
     }
 
     pub fn rate_limiter(&self) -> &RateLimiter {
@@ -239,6 +247,7 @@ pub fn app(state: AppState) -> Router {
         .route("/reference/providers", get(handlers::providers))
         .route("/reference/climate", get(handlers::climate))
         .route("/airport-access", get(handlers::airport_access))
+        .route("/door-to-door", get(handlers::door_to_door))
         .route("/data-card", get(handlers::data_cards))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),

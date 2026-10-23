@@ -140,6 +140,9 @@ pub struct Itinerary {
     /// Null when the source cannot confirm the price at read time.
     pub verified_at: Option<DateTime<Utc>>,
     pub risk: Vec<Risk>,
+    /// Minimum-connection-time warnings for this itinerary.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub connection_warnings: Vec<String>,
     pub price_breakdown: PriceBreakdown,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub score: Option<Score>,
@@ -732,5 +735,47 @@ pub struct AirportAccessResponse {
     pub transfers: Vec<Transfer>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mct: Option<Mct>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub drive: Option<GroundLeg>,
+    pub provenance: Provenance,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroundLeg {
+    pub minutes: u32,
+    pub km: f64,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DoorToDoorLeg {
+    pub airport: String,
+    pub mode: String,
+    pub minutes: u32,
+    /// In the response currency.
+    pub cost: f64,
+    pub currency: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DoorToDoorResponse {
+    pub route: String,
+    pub travel_date: NaiveDate,
+    pub currency: String,
+    pub itinerary_id: String,
+    /// The fare for the party and bags, before transfers.
+    pub fare: f64,
+    pub transfer_cost: f64,
+    pub total: f64,
+    pub flight_minutes: u32,
+    pub transfer_minutes: u32,
+    pub total_minutes: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub origin: Option<DoorToDoorLeg>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub destination: Option<DoorToDoorLeg>,
     pub provenance: Provenance,
 }

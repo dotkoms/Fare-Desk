@@ -11,6 +11,8 @@ pub struct Config {
     pub cors_origins: Vec<String>,
     /// Requests per client per minute. 0 disables the limiter.
     pub rate_limit_per_minute: u32,
+    /// Fetch live driving legs from OSRM for airport access.
+    pub ground_routing: bool,
     pub search_cache_ttl: Duration,
     pub reference_cache_ttl: Duration,
 }
@@ -24,6 +26,7 @@ impl Default for Config {
             serpapi_base_url: None,
             serpapi_daily_limit: 100,
             rate_limit_per_minute: 120,
+            ground_routing: true,
             cors_origins: vec![
                 "http://localhost:5173".into(),
                 "http://127.0.0.1:5173".into(),
@@ -73,6 +76,9 @@ impl Config {
                 .ok()
                 .and_then(|value| value.parse().ok())
                 .unwrap_or(defaults.rate_limit_per_minute),
+            ground_routing: std::env::var("GROUND_ROUTING")
+                .map(|value| !matches!(value.trim().to_lowercase().as_str(), "off" | "false" | "0"))
+                .unwrap_or(defaults.ground_routing),
             search_cache_ttl: defaults.search_cache_ttl,
             reference_cache_ttl: defaults.reference_cache_ttl,
         }

@@ -10,7 +10,7 @@ use std::path::Path;
 
 use chrono::{DateTime, Utc};
 use faredesk_core::{
-    ClimateMonth, DataCard, ExploreCache, FxRate, Holiday, Provider, SearchSnapshot,
+    ClimateMonth, DataCard, ExploreCache, FxRate, GroundLeg, Holiday, Provider, SearchSnapshot,
 };
 
 pub use access::{access_for, access_note, AirportAccess};
@@ -43,6 +43,7 @@ pub struct Store {
     pub holidays_cache: TimedCache<Vec<Holiday>>,
     pub explore_cache: TimedCache<ExploreCache>,
     pub climate_cache: TimedCache<Vec<ClimateMonth>>,
+    pub ground_cache: TimedCache<GroundLeg>,
     cards: Vec<DataCard>,
 }
 
@@ -60,6 +61,7 @@ impl Store {
             holidays_cache: TimedCache::new(CACHE_CAPACITY),
             explore_cache: TimedCache::new(CACHE_CAPACITY),
             climate_cache: TimedCache::new(CACHE_CAPACITY),
+            ground_cache: TimedCache::new(CACHE_CAPACITY),
             cards,
         })
     }
@@ -77,6 +79,7 @@ impl Store {
             holidays_cache: TimedCache::new(CACHE_CAPACITY),
             explore_cache: TimedCache::new(CACHE_CAPACITY),
             climate_cache: TimedCache::new(CACHE_CAPACITY),
+            ground_cache: TimedCache::new(CACHE_CAPACITY),
             cards,
         })
     }
@@ -95,6 +98,7 @@ impl Store {
             + self.holidays_cache.len()
             + self.explore_cache.len()
             + self.climate_cache.len()
+            + self.ground_cache.len()
     }
 
     pub fn sweep_cache(&self) {
@@ -103,6 +107,7 @@ impl Store {
         self.holidays_cache.sweep();
         self.explore_cache.sweep();
         self.climate_cache.sweep();
+        self.ground_cache.sweep();
     }
 
     pub fn now(&self) -> DateTime<Utc> {

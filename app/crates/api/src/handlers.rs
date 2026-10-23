@@ -20,8 +20,9 @@ use faredesk_core::{
     RoutesResponse, SearchQuery, SearchResponse, SearchSnapshot, Sort, MIN_OBSERVATIONS,
 };
 use faredesk_core::{
-    comfort, fare_weather, seasonality, AirportAccessResponse, ClimateResponse, ExploreCache,
-    ExploreCoverage, ExploreResponse, ExploreRow, FareWeatherResponse, SeasonalityResponse,
+    comfort, fare_weather, seasonality, AirportAccessResponse, ClimateResponse, DoorToDoorLeg,
+    DoorToDoorResponse, ExploreCache, ExploreCoverage, ExploreResponse, ExploreRow,
+    FareWeatherResponse, SeasonalityResponse,
 };
 use faredesk_sources::{fixtures, ResolvedQuery, SourceError};
 use faredesk_store::{access_for, access_note};
@@ -649,7 +650,27 @@ pub async fn search(
         }
     };
 
-    let (itineraries, dropped) = build_itineraries(offers, &query);
+    let (mut itineraries, dropped) = build_itineraries(offers, &query);
+    for itinerary in &mut itineraries {
+        for pair in itinerary.segments.windows(2) {
+            let connection = &pair[0].to;
+            let Some(mct) = access_for(&connection.code).and_then(|access| access.mct) else {
+                continue;
+            };
+            let Some(layover) =
+                faredesk_core::layover_minutes(&pair[0].arrive_local, &pair[1].depart_local)
+            else {
+                continue;
+            };
+            let required = i64::from(mct.international);
+            if layover < required {
+                itinerary.connection_warnings.push(format!(
+                    "Layover {layover} min at {} is below the {required} min minimum connection time.",
+                    connection.code
+                ));
+            }
+        }
+    }
 
     if live {
         let today = now().date_naive();
@@ -749,6 +770,7 @@ fn build_itineraries(
             source: offer.source,
             verified_at: offer.verified_at,
             risk: offer.risk,
+            connection_warnings: Vec::new(),
             price_breakdown: breakdown,
             score: None,
         };
@@ -1876,6 +1898,38 @@ pub async fn airport_access(
             .push(format!("No curated access data for {} yet.", place.code));
     }
 
+    // A real driving leg from the curated city centre, cached for 30 days.
+    let mut drive = None;
+    if state.config().ground_routing {
+        if let Some(center) = access.as_ref().and_then(|value| value.city_center) {
+            let key = format!(
+                "drive:{:.4},{:.4}:{:.4},{:.4}",
+                center.lat, center.lng, place.lat, place.lng
+            );
+            let ttl = std::time::Duration::from_secs(30 * 24 * 60 * 60);
+            if let Some(cached) = state.store().ground_cache.get(&key) {
+                drive = Some(cached.value);
+            } else {
+                match state
+                    .ground_client()
+                    .drive((center.lat, center.lng), (place.lat, place.lng))
+                    .await
+                {
+                    Ok(leg) => {
+                        drive = Some(leg.clone());
+                        state.store().ground_cache.insert(key, leg, ttl);
+                    }
+                    Err(error) => {
+                        provenance.degraded = true;
+                        provenance.degraded_reason = Some(format!(
+                            "Live driving time is unavailable ({error}); curated transfers only."
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
     Ok(Json(AirportAccessResponse {
         place,
         city_center: access.as_ref().and_then(|value| value.city_center),
@@ -1884,8 +1938,193 @@ pub async fn airport_access(
             .map(|value| value.transfers.clone())
             .unwrap_or_default(),
         mct: access.as_ref().and_then(|value| value.mct),
+        drive,
         provenance,
     }))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DoorToDoorParams {
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub date: Option<NaiveDate>,
+    pub checked_bags: Option<u8>,
+}
+
+pub async fn door_to_door(
+    State(state): State<AppState>,
+    Query(params): Query<DoorToDoorParams>,
+) -> Result<Json<DoorToDoorResponse>, ApiError> {
+    let date = params.date.ok_or_else(|| {
+        ApiError::bad_request(
+            "missing_date",
+            "Give the travel date, e.g. /api/door-to-door?from=BER&to=LIS&date=2027-03-01.",
+        )
+    })?;
+    let origin = resolve_place(&state, params.from.as_deref().unwrap_or_default())?;
+    let destination = resolve_place(&state, params.to.as_deref().unwrap_or_default())?;
+    if origin.code == destination.code {
+        return Err(ApiError::bad_request(
+            "same_place",
+            "Origin and destination are the same airport.",
+        ));
+    }
+    let checked_bags = params.checked_bags.unwrap_or(0).min(5);
+    let currency = currency_for_country(&origin.country).to_string();
+    let source = state.source(None)?;
+    let route = format!("{}-{}", origin.code, destination.code);
+
+    if source.is_live()
+        && !matches!(
+            state.store().db.consume_quota(
+                source.id(),
+                now().date_naive(),
+                state.config().serpapi_daily_limit
+            ),
+            Ok(QuotaOutcome::Granted { .. })
+        )
+    {
+        return Err(ApiError::quota_exhausted(
+            "The daily source quota is spent; try again tomorrow.",
+            (now().date_naive() + Duration::days(1))
+                .format("%Y-%m-%d")
+                .to_string(),
+        ));
+    }
+
+    let query = SearchQuery {
+        origin: origin.code.clone(),
+        destination: destination.code.clone(),
+        depart_date: date,
+        adults: 1,
+        checked_bags,
+        carry_on_bags: 1,
+        currency: currency.clone(),
+        sort: Sort::Cheapest,
+        ..SearchQuery::default()
+    };
+    let resolved = ResolvedQuery {
+        request: &query,
+        origin: &origin,
+        destination: &destination,
+    };
+    let offers = match source.search(&resolved).await {
+        Ok(offers) => offers,
+        Err(error) => {
+            return Err(match error {
+                SourceError::InvalidRequest(message) => {
+                    ApiError::bad_request("source_rejected", message)
+                }
+                SourceError::NotConfigured(message) => {
+                    ApiError::bad_request("source_not_configured", message)
+                }
+                SourceError::Unavailable(message) => ApiError::unavailable(message),
+                SourceError::Parse(message) => {
+                    ApiError::new(StatusCode::BAD_GATEWAY, "source_bad_response", message)
+                }
+            });
+        }
+    };
+    let (mut itineraries, _) = build_itineraries(offers, &query);
+    let Some(itinerary) = itineraries.drain(..).next() else {
+        return Err(ApiError::not_found(
+            "no_fare",
+            "No priced itinerary was returned for this route and date.",
+        ));
+    };
+
+    let mut notes: Vec<String> = Vec::new();
+    let origin_leg = choose_transfer(&state, &origin.code, &currency, &mut notes).await;
+    let destination_leg = choose_transfer(&state, &destination.code, &currency, &mut notes).await;
+    let transfer_cost = origin_leg.as_ref().map(|leg| leg.cost).unwrap_or(0.0)
+        + destination_leg.as_ref().map(|leg| leg.cost).unwrap_or(0.0);
+    let transfer_minutes = origin_leg.as_ref().map(|leg| leg.minutes).unwrap_or(0)
+        + destination_leg.as_ref().map(|leg| leg.minutes).unwrap_or(0);
+
+    let fare = itinerary.total_price;
+    let total = ((fare + transfer_cost) * 100.0).round() / 100.0;
+    let flight_minutes = itinerary.total_duration_minutes;
+    let total_minutes = flight_minutes + transfer_minutes;
+
+    let mut provenance = base_provenance(source.data_card_id(), source.id(), 1);
+    provenance.freshness = if source.is_live() {
+        Freshness::Live
+    } else {
+        Freshness::Fixture
+    };
+    provenance.notes.push(
+        "Door-to-door adds the cheapest curated transfer at each end to the party fare."
+            .to_string(),
+    );
+    provenance.notes.push(
+        "Transfer times and costs are curated estimates (airport-access card), not live routing."
+            .to_string(),
+    );
+    provenance
+        .notes
+        .push("Reliability-adjusted pricing is not included yet.".to_string());
+    provenance.notes.extend(notes);
+
+    Ok(Json(DoorToDoorResponse {
+        route,
+        travel_date: date,
+        currency,
+        itinerary_id: itinerary.id,
+        fare,
+        transfer_cost: (transfer_cost * 100.0).round() / 100.0,
+        total,
+        flight_minutes,
+        transfer_minutes,
+        total_minutes,
+        origin: origin_leg,
+        destination: destination_leg,
+        provenance,
+    }))
+}
+
+/// The cheapest curated transfer to the city centre, converted to the
+/// response currency. Missing data is a note, not an error.
+async fn choose_transfer(
+    state: &AppState,
+    airport: &str,
+    currency: &str,
+    notes: &mut Vec<String>,
+) -> Option<DoorToDoorLeg> {
+    let access = access_for(airport)?;
+    let transfer = access
+        .transfers
+        .iter()
+        .min_by(|a, b| a.cost.total_cmp(&b.cost))?;
+    let cost = if transfer.currency.eq_ignore_ascii_case(currency) {
+        transfer.cost
+    } else {
+        match fx_rate_for(state, &transfer.currency, currency).await {
+            Some((rate, _, degraded)) => {
+                if degraded {
+                    notes.push(format!(
+                        "Bundled FX used for {} transfer in {}.",
+                        airport, transfer.currency
+                    ));
+                }
+                ((transfer.cost * rate) * 100.0).round() / 100.0
+            }
+            None => {
+                notes.push(format!(
+                    "No FX rate for {} transfer at {}; transfer cost omitted.",
+                    transfer.currency, airport
+                ));
+                return None;
+            }
+        }
+    };
+    Some(DoorToDoorLeg {
+        airport: airport.to_string(),
+        mode: transfer.mode.clone(),
+        minutes: transfer.minutes,
+        cost,
+        currency: currency.to_string(),
+    })
 }
 
 fn parse_dataset(value: &str) -> Option<Dataset> {

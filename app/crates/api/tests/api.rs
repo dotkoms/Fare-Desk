@@ -19,7 +19,12 @@ fn depart_date() -> String {
 }
 
 fn state() -> AppState {
-    AppState::in_memory(Config::default()).expect("state")
+    // Ground routing is off so tests never call OSRM.
+    AppState::in_memory(Config {
+        ground_routing: false,
+        ..Config::default()
+    })
+    .expect("state")
 }
 
 async fn call(
@@ -866,4 +871,48 @@ async fn climate_uses_the_cached_normals() {
     assert_eq!(body["months"][1]["comfort"], 80);
     assert_eq!(body["provenance"]["freshness"], "cached");
     assert_eq!(body["provenance"]["dataCardId"], "climate-open-meteo");
+}
+
+#[tokio::test]
+async fn door_to_door_adds_the_cheapest_transfer_at_each_end() {
+    let (status, body) = call(
+        app(state()),
+        "GET",
+        "/api/door-to-door?from=BER&to=LIS&date=2027-03-01&checkedBags=0",
+        None,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["route"], "BER-LIS");
+    assert_eq!(body["currency"], "EUR");
+    // Cheapest fixture fare with no checked bag is the €104 Ryanair connection.
+    assert_eq!(body["fare"], 104.0);
+    // Berlin train €4.40 plus Lisbon metro €2.00.
+    assert_eq!(body["transferCost"], 6.4);
+    assert_eq!(body["total"], 110.4);
+    assert_eq!(body["flightMinutes"], 360);
+    assert_eq!(body["transferMinutes"], 55);
+    assert_eq!(body["totalMinutes"], 415);
+    assert_eq!(body["origin"]["mode"], "train");
+    assert_eq!(body["destination"]["mode"], "metro");
+    assert_eq!(body["provenance"]["dataCardId"], "fares-fixture");
+    assert!(body["provenance"]["notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|note| note.as_str().unwrap().contains("Reliability-adjusted")));
+}
+
+#[tokio::test]
+async fn door_to_door_requires_a_date() {
+    let (status, body) = call(
+        app(state()),
+        "GET",
+        "/api/door-to-door?from=BER&to=LIS",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"]["code"], "missing_date");
 }

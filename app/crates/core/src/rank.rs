@@ -110,6 +110,7 @@ mod tests {
             source: "test".into(),
             verified_at: None,
             risk,
+            connection_warnings: Vec::new(),
             price_breakdown: PriceBreakdown {
                 fare: price,
                 taxes_and_fees: None,

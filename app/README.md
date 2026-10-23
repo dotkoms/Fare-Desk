@@ -57,7 +57,8 @@ curl -s -X POST "http://127.0.0.1:8080/api/search" \
 | `GET` | `/api/reference/holidays?country=&year=` | Public holidays, cached 24 h |
 | `GET` | `/api/reference/providers?airport=` | Provider registry and deep-link templates |
 | `GET` | `/api/reference/climate?place=` | Monthly temperature and rain normals with a comfort score |
-| `GET` | `/api/airport-access?airport=` | City-centre transfers (time, cost) and minimum connection times |
+| `GET` | `/api/airport-access?airport=` | City-centre transfers (time, cost), a live OSRM driving leg and minimum connection times |
+| `GET` | `/api/door-to-door?from=&to=&date=` | Party fare plus the cheapest transfer at each end, as a door-to-door total |
 | `GET` | `/api/data-card?dataset=` | The source, licence and method behind every dataset |
 
 ### Search body
@@ -174,11 +175,15 @@ Daily cron, 06:07:
 
 ## Airport access and connection times
 
-`GET /api/airport-access?airport=BER` returns the airport's city-centre transfers (mode, typical minutes, one-way cost in local currency) and minimum connection times for domestic and international connections.
+`GET /api/airport-access?airport=BER` returns the airport's city-centre transfers (mode, typical minutes, one-way cost in local currency), a live driving leg from OSRM (minutes, km) and minimum connection times for domestic and international connections. The OSRM leg is cached for 30 days and can be disabled with `GROUND_ROUTING=off`.
 
 The table in [`data/access.json`](data/access.json) covers thirteen launch airports and is **curated**, not live routing: times are typical, costs are one adult one way, and MCTs are guidance for a single ticket. Every response says so and carries the `airport-access` data card. Airports without an entry return an empty list with a note, not a 404.
 
-Still missing from this step: real 30/60/90-minute isochrones (OSRM and GTFS, as in [docs/14](docs/14-cold-start-and-coverage.md)) and US BTS reliability data.
+`GET /api/door-to-door?from=BER&to=LIS&date=2027-03-01` returns the cheapest fare for one adult plus the cheapest curated transfer at each end, converted to the fare currency: `fare`, `transferCost`, `total`, `flightMinutes`, `transferMinutes`, `totalMinutes`, and each leg. It is the honest “what the trip actually costs” number the route page needs.
+
+Search results also carry `connectionWarnings`: any connection whose layover is below the airport's minimum connection time is called out by name and minutes.
+
+Still missing from this step: full 30/60/90-minute public-transit isochrones (OSRM gives a driving leg, not GTFS routing) and US BTS reliability data with a reliability-adjusted price.
 
 ## Point of sale
 
@@ -260,7 +265,7 @@ CI runs `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, the fu
 
 ```bash
 cd app
-cargo test          # 118 tests
+cargo test          # 123 tests
 cargo clippy --all-targets
 ```
 
