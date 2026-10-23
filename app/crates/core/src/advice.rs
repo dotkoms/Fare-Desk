@@ -83,7 +83,7 @@ pub fn advise(input: &AdviceInput<'_>) -> Advice {
         Recommendation::Watch
     } else if days_out > WAIT_HORIZON_DAYS {
         reasons.push(format!(
-            "Above the median with {days_out} days to go; fares on this route usually improve before they rise."
+            "Above the median with {days_out} days to go; re-check at 45 days out before booking."
         ));
         Recommendation::Wait
     } else {
