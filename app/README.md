@@ -9,6 +9,7 @@ app/
 │  ├─ core/              contract types, pricing, fingerprint, ranking
 │  ├─ store/             embedded reference data, TTL cache, SQLite ledger
 │  ├─ sources/           fixtures, SerpAPI, FX and holiday clients
+│  ├─ scheduler/         daily fare-history collector
 │  └─ api/               Axum HTTP service
 ├─ data/
 │  ├─ airports.json      3,177 airports with IANA timezones (generated)
@@ -46,6 +47,7 @@ curl -s -X POST "http://127.0.0.1:8080/api/search" \
 | `GET` | `/healthz` | Version, uptime, reference size, cache size, source configuration and today's quota |
 | `GET` | `/api/places?q=&limit=` | Airports ranked by IATA code, city, name, then country |
 | `GET` | `/api/routes?origin=&limit=` | Destinations covered from an airport, with coverage state |
+| `GET` | `/api/route-intel?from=&to=&date=` | Daily minima, p10/p50/p90, current percentile, sample and observation window |
 | `POST` | `/api/search` | Priced, deduplicated, ranked itineraries with provenance |
 | `GET` | `/api/reference/fx?base=&quote=` | Latest ECB reference rate, cached 24 h, bundled fallback |
 | `GET` | `/api/reference/holidays?country=&year=` | Public holidays, cached 24 h |
@@ -120,6 +122,39 @@ node scripts/build-airports.mjs
 
 It joins [OurAirports](https://ourairports.com/data/) (public domain: airports, coordinates, scheduled service) with IANA timezones from [mwgg/Airports](https://github.com/mwgg/Airports) (MIT), keeping large and medium airports with scheduled service. Airports with no known timezone are omitted rather than guessed — 67 today. The generated file is committed so the binary builds and starts offline.
 
+## History collection
+
+`faredesk-collector` is the Step 4 collector. Once a day it runs one paid search per watched route, picks one travel date per route (rotating through that route's window), and keeps the cheapest offer priced for the party and bags in `data/watchlist.yaml`.
+
+```bash
+cd app
+cp ../data/watchlist.example.yaml ../data/watchlist.yaml   # then edit
+cp .env.example .env                                       # add SERPAPI_KEY
+cargo run -p faredesk-scheduler --bin faredesk-collector -- \
+  --watchlist ../data/watchlist.yaml --dry-run
+```
+
+Drop `--dry-run` for a real pass. `--limit N` caps the number of source searches.
+
+- One row per route, travel date and observation day: the daily minimum and the offer that produced it.
+- Re-running the same day skips routes already observed, so cron retries are safe.
+- The collector refuses to start without `SERPAPI_KEY`; fixture prices are never written into history.
+- It respects `SERPAPI_DAILY_LIMIT`, stops when the quota is spent (exit code 2), and logs a JSON report.
+
+In Docker, copy the example to `data/watchlist.yaml` and run the collection profile:
+
+```bash
+docker compose --profile collect run --rm collector
+```
+
+Daily cron, 06:07:
+
+```cron
+7 6 * * * cd /srv/faredesk/app && /usr/local/bin/faredesk-collector --watchlist /srv/faredesk/data/watchlist.yaml >> /var/log/faredesk-collector.log 2>&1
+```
+
+`GET /api/route-intel` reads that history. It returns `recommendation: "insufficient"` under 14 observations; once the sample is large enough it returns the statistics with `recommendation: null` until the Step 5 buy/wait engine lands. It always carries the `fare-history` data card, sample size and observation window.
+
 ## Errors
 
 Every failure is a JSON envelope, never an HTML error page or an empty body:
@@ -167,7 +202,7 @@ CI runs `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, the fu
 
 ```bash
 cd app
-cargo test          # 69 tests
+cargo test          # 80 tests
 cargo clippy --all-targets
 ```
 

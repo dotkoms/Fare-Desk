@@ -238,6 +238,56 @@ impl SearchQuery {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+pub enum Recommendation {
+    Buy,
+    Wait,
+    Watch,
+    Insufficient,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryPoint {
+    pub date: NaiveDate,
+    pub price: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ObservationWindow {
+    pub from: NaiveDate,
+    pub to: NaiveDate,
+    pub days: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RouteIntel {
+    pub route: String,
+    pub travel_date: NaiveDate,
+    pub currency: String,
+    pub current_price: Option<f64>,
+    pub percentile: Option<f64>,
+    pub median: Option<f64>,
+    pub p10: Option<f64>,
+    pub p90: Option<f64>,
+    pub history: Vec<HistoryPoint>,
+    pub sample_size: usize,
+    pub window: Option<ObservationWindow>,
+    /// Null until the buy/wait engine ships; `insufficient` under the sample floor.
+    pub recommendation: Option<Recommendation>,
+    pub min_observations: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RouteIntelResponse {
+    pub intel: RouteIntel,
+    pub provenance: Provenance,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Freshness {
     /// Bundled reference data (airports, providers, data cards).
     Bundled,

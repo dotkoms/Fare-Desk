@@ -220,6 +220,7 @@ pub fn app(state: AppState) -> Router {
     let api = Router::new()
         .route("/places", get(handlers::places))
         .route("/routes", get(handlers::routes))
+        .route("/route-intel", get(handlers::route_intel))
         .route("/search", post(handlers::search))
         .route("/reference/fx", get(handlers::fx))
         .route("/reference/holidays", get(handlers::holidays))

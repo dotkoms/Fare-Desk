@@ -5,7 +5,7 @@ WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY data ./data
-RUN cargo build --release -p faredesk-api
+RUN cargo build --release -p faredesk-api -p faredesk-scheduler
 
 FROM debian:bookworm-slim
 
@@ -17,6 +17,7 @@ RUN apt-get update \
     && chown faredesk:faredesk /data
 
 COPY --from=build /src/target/release/faredesk-api /usr/local/bin/faredesk-api
+COPY --from=build /src/target/release/faredesk-collector /usr/local/bin/faredesk-collector
 
 WORKDIR /app
 USER faredesk

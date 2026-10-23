@@ -17,5 +17,22 @@ services:
       - faredesk-data:/data
     restart: unless-stopped
 
+  # One daily pass over data/watchlist.yaml:
+  #   docker compose --profile collect run --rm collector
+  collector:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    profiles: ["collect"]
+    command: ["faredesk-collector", "--watchlist", "/config/watchlist.yaml"]
+    environment:
+      DATABASE_PATH: /data/faredesk.sqlite
+      SERPAPI_KEY: ${SERPAPI_KEY:-}
+      SERPAPI_DAILY_LIMIT: ${SERPAPI_DAILY_LIMIT:-100}
+      RUST_LOG: ${RUST_LOG:-faredesk_scheduler=info}
+    volumes:
+      - faredesk-data:/data
+      - ./data:/config:ro
+
 volumes:
   faredesk-data:

@@ -11,10 +11,11 @@ use chrono::{DateTime, Duration, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use faredesk_core::{
-    apply_scores, fingerprint, price_offer, sort_itineraries, Cabin, Coverage, DataCard, Dataset,
-    Freshness, FxResponse, Holiday, HolidaysResponse, Itinerary, Place, PlacesResponse, Provenance,
-    Provider, ProvidersResponse, RouteSummary, RoutesResponse, SearchQuery, SearchResponse,
-    SearchSnapshot, Sort,
+    apply_scores, fingerprint, percentile, percentile_rank, price_offer, sort_itineraries, Cabin,
+    Coverage, DataCard, Dataset, Freshness, FxResponse, HistoryPoint, Holiday, HolidaysResponse,
+    Itinerary, ObservationWindow, Place, PlacesResponse, Provenance, Provider, ProvidersResponse,
+    Recommendation, RouteIntel, RouteIntelResponse, RouteSummary, RoutesResponse, SearchQuery,
+    SearchResponse, SearchSnapshot, Sort,
 };
 use faredesk_sources::{fixtures, ResolvedQuery, SourceError};
 use faredesk_store::{Cached, QuotaOutcome};
@@ -230,6 +231,130 @@ pub async fn routes(
 
     Ok(Json(RoutesResponse {
         routes: summaries,
+        provenance,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// Route intelligence
+// ---------------------------------------------------------------------------
+
+const MIN_OBSERVATIONS: u32 = 14;
+
+#[derive(Debug, Deserialize)]
+pub struct RouteIntelParams {
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub date: Option<NaiveDate>,
+}
+
+pub async fn route_intel(
+    State(state): State<AppState>,
+    Query(params): Query<RouteIntelParams>,
+) -> Result<Json<RouteIntelResponse>, ApiError> {
+    let from = params.from.unwrap_or_default();
+    let to = params.to.unwrap_or_default();
+    if from.trim().is_empty() || to.trim().is_empty() {
+        return Err(ApiError::bad_request(
+            "missing_route",
+            "Give from and to, e.g. /api/route-intel?from=BER&to=LIS&date=2027-03-01.",
+        ));
+    }
+    let date = params.date.ok_or_else(|| {
+        ApiError::bad_request(
+            "missing_date",
+            "Give the travel date, e.g. /api/route-intel?from=BER&to=LIS&date=2027-03-01.",
+        )
+    })?;
+
+    let origin = resolve_place(&state, &from)?;
+    let destination = resolve_place(&state, &to)?;
+    if origin.code == destination.code {
+        return Err(ApiError::bad_request(
+            "same_place",
+            "Origin and destination are the same airport.",
+        ));
+    }
+    let route = format!("{}-{}", origin.code, destination.code);
+
+    let rows = state
+        .store()
+        .db
+        .daily_minima(&route, date)
+        .map_err(|error| ApiError::internal(format!("fare history: {error}")))?;
+    let currency = state
+        .store()
+        .db
+        .history_currency(&route, date)
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "EUR".to_string());
+
+    let mut sorted: Vec<f64> = rows.iter().map(|(_, price)| *price).collect();
+    sorted.sort_by(f64::total_cmp);
+
+    let current_price = rows.last().map(|(_, price)| *price);
+    let current_percentile = current_price
+        .and_then(|price| percentile_rank(&sorted, price))
+        .map(|value| (value * 10.0).round() / 10.0);
+    let median = percentile(&sorted, 50.0);
+    let p10 = percentile(&sorted, 10.0);
+    let p90 = percentile(&sorted, 90.0);
+    let sample_size = rows.len();
+    let recommendation = if sample_size < MIN_OBSERVATIONS as usize {
+        Some(Recommendation::Insufficient)
+    } else {
+        None
+    };
+    let window = match (rows.first(), rows.last()) {
+        (Some((from_date, _)), Some((to_date, _))) => Some(ObservationWindow {
+            from: *from_date,
+            to: *to_date,
+            days: (*to_date - *from_date).num_days().max(0) as u32 + 1,
+        }),
+        _ => None,
+    };
+    let history = rows
+        .iter()
+        .map(|(date, price)| HistoryPoint {
+            date: *date,
+            price: *price,
+        })
+        .collect();
+
+    let mut provenance = base_provenance("fare-history", "fare-history", sample_size);
+    provenance.observed_at = rows
+        .last()
+        .and_then(|(date, _)| {
+            date.and_hms_opt(0, 0, 0)
+                .map(|time| DateTime::<Utc>::from_naive_utc_and_offset(time, Utc))
+        })
+        .unwrap_or_else(now);
+    provenance.age_seconds = (now() - provenance.observed_at).num_seconds().max(0) as u64;
+    provenance.notes.push(if sample_size == 0 {
+        format!("Collecting baseline — 0 of {MIN_OBSERVATIONS} daily observations. No observations for this route and travel date yet.")
+    } else if sample_size < MIN_OBSERVATIONS as usize {
+        format!("Collecting baseline — {sample_size} of {MIN_OBSERVATIONS} daily observations.")
+    } else {
+        "History is ready; buy/wait rules ship with the next backend step.".to_string()
+    });
+
+    Ok(Json(RouteIntelResponse {
+        intel: RouteIntel {
+            route,
+            travel_date: date,
+            currency,
+            current_price,
+            percentile: current_percentile,
+            median,
+            p10,
+            p90,
+            history,
+            sample_size,
+            window,
+            recommendation,
+            min_observations: MIN_OBSERVATIONS,
+        },
         provenance,
     }))
 }
@@ -473,7 +598,7 @@ pub async fn search(
     if live {
         let today = now().date_naive();
         for itinerary in &itineraries {
-            let _ = state.store().db.record_observation(
+            let _ = state.store().db.record_daily_minimum(
                 &route,
                 query.depart_date,
                 today,

@@ -130,10 +130,11 @@ impl Db {
         Ok(used)
     }
 
-    /// Keep the lowest price seen for a route, travel date, observation day and
-    /// physical service. Returns true when this call lowered the stored price.
+    /// Keep exactly one observation per route, travel date and observation
+    /// day: the lowest price and the offer that produced it. A later, higher
+    /// quote the same day is ignored; a lower one replaces the row.
     #[allow(clippy::too_many_arguments)]
-    pub fn record_observation(
+    pub fn record_daily_minimum(
         &self,
         route: &str,
         travel_date: NaiveDate,
@@ -143,42 +144,111 @@ impl Db {
         source: &str,
         fingerprint: &str,
     ) -> Result<bool, DbError> {
-        let conn = self.conn.lock().expect("db lock");
-        let existing: Option<f64> = conn
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        let travel = travel_date.format("%Y-%m-%d").to_string();
+        let observed = observed_on.format("%Y-%m-%d").to_string();
+
+        let existing: Option<f64> = tx
             .query_row(
-                "SELECT price FROM fare_history
-                 WHERE route = ?1 AND travel_date = ?2 AND observed_on = ?3 AND fingerprint = ?4",
-                params![
-                    route,
-                    travel_date.format("%Y-%m-%d").to_string(),
-                    observed_on.format("%Y-%m-%d").to_string(),
-                    fingerprint
-                ],
+                "SELECT MIN(price) FROM fare_history
+                 WHERE route = ?1 AND travel_date = ?2 AND observed_on = ?3",
+                params![route, travel, observed],
+                |row| row.get(0),
+            )
+            .optional()?
+            .flatten();
+
+        if existing.is_some_and(|old| old <= price) {
+            tx.commit()?;
+            return Ok(false);
+        }
+
+        tx.execute(
+            "DELETE FROM fare_history
+             WHERE route = ?1 AND travel_date = ?2 AND observed_on = ?3",
+            params![route, travel, observed],
+        )?;
+        tx.execute(
+            "INSERT INTO fare_history (route, travel_date, observed_on, price, currency, source, fingerprint)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![route, travel, observed, price, currency, source, fingerprint],
+        )?;
+        tx.commit()?;
+        Ok(true)
+    }
+
+    /// One point per observation day: the daily minimum, oldest first.
+    pub fn daily_minima(
+        &self,
+        route: &str,
+        travel_date: NaiveDate,
+    ) -> Result<Vec<(NaiveDate, f64)>, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut statement = conn.prepare(
+            "SELECT observed_on, MIN(price)
+             FROM fare_history
+             WHERE route = ?1 AND travel_date = ?2
+             GROUP BY observed_on
+             ORDER BY observed_on",
+        )?;
+        let rows = statement.query_map(
+            params![route, travel_date.format("%Y-%m-%d").to_string()],
+            |row| {
+                let day: String = row.get(0)?;
+                let price: f64 = row.get(1)?;
+                Ok((day, price))
+            },
+        )?;
+
+        let mut points = Vec::new();
+        for row in rows {
+            let (day, price) = row?;
+            if let Ok(date) = NaiveDate::parse_from_str(&day, "%Y-%m-%d") {
+                points.push((date, price));
+            }
+        }
+        Ok(points)
+    }
+
+    /// The currency of the latest observation for a route and travel date.
+    pub fn history_currency(
+        &self,
+        route: &str,
+        travel_date: NaiveDate,
+    ) -> Result<Option<String>, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let currency = conn
+            .query_row(
+                "SELECT currency FROM fare_history
+                 WHERE route = ?1 AND travel_date = ?2
+                 ORDER BY observed_on DESC, price ASC
+                 LIMIT 1",
+                params![route, travel_date.format("%Y-%m-%d").to_string()],
                 |row| row.get(0),
             )
             .optional()?;
+        Ok(currency)
+    }
 
-        match existing {
-            Some(old) if old <= price => Ok(false),
-            _ => {
-                conn.execute(
-                    "INSERT INTO fare_history (route, travel_date, observed_on, price, currency, source, fingerprint)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-                     ON CONFLICT(route, travel_date, observed_on, fingerprint)
-                     DO UPDATE SET price = excluded.price, currency = excluded.currency, source = excluded.source",
-                    params![
-                        route,
-                        travel_date.format("%Y-%m-%d").to_string(),
-                        observed_on.format("%Y-%m-%d").to_string(),
-                        price,
-                        currency,
-                        source,
-                        fingerprint
-                    ],
-                )?;
-                Ok(true)
-            }
-        }
+    pub fn has_observation(
+        &self,
+        route: &str,
+        travel_date: NaiveDate,
+        observed_on: NaiveDate,
+    ) -> Result<bool, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM fare_history
+             WHERE route = ?1 AND travel_date = ?2 AND observed_on = ?3",
+            params![
+                route,
+                travel_date.format("%Y-%m-%d").to_string(),
+                observed_on.format("%Y-%m-%d").to_string()
+            ],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
     }
 
     pub fn observation_count(&self, route: &str) -> Result<i64, DbError> {
@@ -241,42 +311,43 @@ mod tests {
     }
 
     #[test]
-    fn daily_minimum_is_kept() {
+    fn daily_minimum_is_kept_and_one_row_per_day() {
         let db = Db::open_in_memory().unwrap();
         let travel = NaiveDate::from_ymd_opt(2027, 3, 1).unwrap();
+        let day = NaiveDate::from_ymd_opt(2026, 10, 22).unwrap();
+
         assert!(db
-            .record_observation(
-                "BER-LIS",
-                travel,
-                day(),
-                129.0,
-                "EUR",
-                "fixtures",
-                "TP-1041-2027-03-01"
-            )
+            .record_daily_minimum("BER-LIS", travel, day, 129.0, "EUR", "serpapi", "TP-1")
             .unwrap());
         assert!(!db
-            .record_observation(
-                "BER-LIS",
-                travel,
-                day(),
-                139.0,
-                "EUR",
-                "fixtures",
-                "TP-1041-2027-03-01"
-            )
+            .record_daily_minimum("BER-LIS", travel, day, 139.0, "EUR", "serpapi", "U2-2")
             .unwrap());
         assert!(db
-            .record_observation(
-                "BER-LIS",
-                travel,
-                day(),
-                119.0,
-                "EUR",
-                "fixtures",
-                "TP-1041-2027-03-01"
-            )
+            .record_daily_minimum("BER-LIS", travel, day, 119.0, "EUR", "serpapi", "FR-3")
             .unwrap());
-        assert_eq!(db.observation_count("BER-LIS").unwrap(), 1);
+
+        let points = db.daily_minima("BER-LIS", travel).unwrap();
+        assert_eq!(points, vec![(day, 119.0)]);
+        assert_eq!(
+            db.history_currency("BER-LIS", travel).unwrap().as_deref(),
+            Some("EUR")
+        );
+        assert!(db.has_observation("BER-LIS", travel, day).unwrap());
+    }
+
+    #[test]
+    fn daily_minima_are_grouped_by_observation_day() {
+        let db = Db::open_in_memory().unwrap();
+        let travel = NaiveDate::from_ymd_opt(2027, 3, 1).unwrap();
+        for (offset, price) in [(0, 131.0), (1, 124.0), (2, 119.0)] {
+            let day =
+                NaiveDate::from_ymd_opt(2026, 10, 20).unwrap() + chrono::Duration::days(offset);
+            db.record_daily_minimum("BER-LIS", travel, day, price, "EUR", "serpapi", "TP-1")
+                .unwrap();
+        }
+        let points = db.daily_minima("BER-LIS", travel).unwrap();
+        assert_eq!(points.len(), 3);
+        assert_eq!(points.last().unwrap().1, 119.0);
+        assert_eq!(db.observation_count("BER-LIS").unwrap(), 3);
     }
 }

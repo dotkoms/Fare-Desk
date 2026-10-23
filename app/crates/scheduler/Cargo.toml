@@ -1,0 +1,32 @@
+[package]
+name = "faredesk-scheduler"
+description = "Daily fare-history collector"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+name = "faredesk_scheduler"
+path = "src/lib.rs"
+
+[[bin]]
+name = "faredesk-collector"
+path = "src/main.rs"
+
+[dependencies]
+chrono.workspace = true
+dotenvy.workspace = true
+faredesk-core = { path = "../core" }
+faredesk-sources = { path = "../sources" }
+faredesk-store = { path = "../store" }
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yml = "0.0.12"
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+[dev-dependencies]

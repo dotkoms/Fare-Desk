@@ -9,8 +9,10 @@ pub mod fingerprint;
 pub mod geo;
 pub mod pricing;
 pub mod rank;
+pub mod stats;
 
 pub use contract::*;
 pub use fingerprint::fingerprint;
 pub use pricing::price_offer;
 pub use rank::{apply_scores, sort_itineraries};
+pub use stats::{percentile, percentile_rank};

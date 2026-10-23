@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
-use chrono::{Duration as ChronoDuration, Utc};
+use chrono::{Duration as ChronoDuration, NaiveDate, Utc};
 use serde_json::{json, Value};
 use tower::ServiceExt;
 
@@ -421,4 +421,84 @@ async fn unknown_endpoints_return_a_json_error() {
         .as_str()
         .unwrap()
         .contains("data-card"));
+}
+
+#[tokio::test]
+async fn route_intel_says_insufficient_without_history() {
+    let (status, body) = call(
+        app(state()),
+        "GET",
+        "/api/route-intel?from=BER&to=LIS&date=2027-03-01",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["intel"]["route"], "BER-LIS");
+    assert_eq!(body["intel"]["sampleSize"], 0);
+    assert_eq!(body["intel"]["recommendation"], "insufficient");
+    assert_eq!(body["intel"]["history"].as_array().unwrap().len(), 0);
+    assert_eq!(body["provenance"]["dataCardId"], "fare-history");
+    assert!(body["provenance"]["notes"][0]
+        .as_str()
+        .unwrap()
+        .contains("Collecting baseline — 0 of 14"));
+}
+
+#[tokio::test]
+async fn route_intel_returns_percentiles_at_fourteen_days() {
+    let state = state();
+    let travel = NaiveDate::from_ymd_opt(2027, 3, 1).unwrap();
+    let first_day = NaiveDate::from_ymd_opt(2026, 10, 1).unwrap();
+    for offset in 0..14 {
+        state
+            .store()
+            .db
+            .record_daily_minimum(
+                "BER-LIS",
+                travel,
+                first_day + ChronoDuration::days(offset),
+                100.0 + offset as f64,
+                "EUR",
+                "serpapi",
+                "TP-1041",
+            )
+            .unwrap();
+    }
+
+    let (status, body) = call(
+        app(state),
+        "GET",
+        "/api/route-intel?from=BER&to=LIS&date=2027-03-01",
+        None,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    let intel = &body["intel"];
+    assert_eq!(intel["sampleSize"], 14);
+    assert_eq!(intel["currentPrice"], 113.0);
+    assert_eq!(intel["median"], 106.5);
+    assert_eq!(intel["p10"], 101.3);
+    assert_eq!(intel["p90"], 111.7);
+    assert_eq!(intel["percentile"], 100.0);
+    assert_eq!(intel["window"]["days"], 14);
+    assert!(intel["recommendation"].is_null());
+    assert_eq!(intel["history"].as_array().unwrap().len(), 14);
+    assert!(body["provenance"]["notes"][0]
+        .as_str()
+        .unwrap()
+        .contains("buy/wait rules"));
+}
+
+#[tokio::test]
+async fn route_intel_requires_a_date() {
+    let (status, body) = call(
+        app(state()),
+        "GET",
+        "/api/route-intel?from=BER&to=LIS",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"]["code"], "missing_date");
 }
