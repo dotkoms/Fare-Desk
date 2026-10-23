@@ -1,7 +1,11 @@
 use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::time::Instant;
 
-use axum::extract::{Query, State};
+use axum::extract::{ConnectInfo, Query, Request, State};
 use axum::http::StatusCode;
+use axum::middleware::Next;
+use axum::response::{IntoResponse, Response};
 use axum::Json;
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
@@ -57,6 +61,13 @@ fn resolve_place(state: &AppState, value: &str) -> Result<Place, ApiError> {
 
 fn ttl_duration(ttl: std::time::Duration) -> Duration {
     Duration::from_std(ttl).unwrap_or_else(|_| Duration::zero())
+}
+
+pub async fn not_found() -> ApiError {
+    ApiError::not_found(
+        "not_found",
+        "No such endpoint. See /api/data-card for the dataset list.",
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -859,6 +870,49 @@ pub async fn data_cards(
     ];
 
     Ok(Json(DataCardsResponse { cards, provenance }))
+}
+
+// ---------------------------------------------------------------------------
+// Rate limiting
+// ---------------------------------------------------------------------------
+
+pub async fn rate_limit(State(state): State<AppState>, request: Request, next: Next) -> Response {
+    let key = client_key(&request);
+    match state.rate_limiter().check(&key, Instant::now()) {
+        Ok(()) => next.run(request).await,
+        Err(retry_after) => {
+            let mut response = ApiError::new(
+                StatusCode::TOO_MANY_REQUESTS,
+                "rate_limited",
+                "Too many requests in a minute; try again shortly.",
+            )
+            .into_response();
+            if let Ok(value) = retry_after.to_string().parse() {
+                response.headers_mut().insert("retry-after", value);
+            }
+            response
+        }
+    }
+}
+
+fn client_key(request: &Request) -> String {
+    for header in ["x-forwarded-for", "x-real-ip"] {
+        if let Some(first) = request
+            .headers()
+            .get(header)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.split(',').next())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            return first.to_string();
+        }
+    }
+    request
+        .extensions()
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|ConnectInfo(address)| address.ip().to_string())
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 fn parse_dataset(value: &str) -> Option<Dataset> {

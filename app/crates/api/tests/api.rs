@@ -28,10 +28,23 @@ async fn call(
     uri: &str,
     body: Option<Value>,
 ) -> (StatusCode, Value) {
-    let request = Request::builder()
+    call_as(app, method, uri, body, None).await
+}
+
+async fn call_as(
+    app: axum::Router,
+    method: &str,
+    uri: &str,
+    body: Option<Value>,
+    client: Option<&str>,
+) -> (StatusCode, Value) {
+    let mut request = Request::builder()
         .method(method)
         .uri(uri)
         .header("content-type", "application/json");
+    if let Some(client) = client {
+        request = request.header("x-forwarded-for", client);
+    }
     let request = match body {
         Some(body) => request.body(Body::from(body.to_string())).unwrap(),
         None => request.body(Body::empty()).unwrap(),
@@ -359,4 +372,53 @@ async fn health_reports_sources_and_reference_size() {
         .find(|source| source["id"] == "serpapi")
         .unwrap();
     assert_eq!(serpapi["configured"], false);
+}
+
+#[tokio::test]
+async fn rate_limiter_refuses_after_the_limit_but_leaves_health_alone() {
+    let config = Config {
+        rate_limit_per_minute: 2,
+        ..Config::default()
+    };
+    let app = app(AppState::in_memory(config).unwrap());
+
+    for _ in 0..2 {
+        let (status, _) = call_as(
+            app.clone(),
+            "GET",
+            "/api/places?q=lis",
+            None,
+            Some("203.0.113.7"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    let (status, body) = call_as(
+        app.clone(),
+        "GET",
+        "/api/places?q=lis",
+        None,
+        Some("203.0.113.7"),
+    )
+    .await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(body["error"]["code"], "rate_limited");
+
+    let (status, _) = call_as(app.clone(), "GET", "/healthz", None, Some("203.0.113.7")).await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, _) = call_as(app, "GET", "/api/places?q=lis", None, Some("198.51.100.4")).await;
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn unknown_endpoints_return_a_json_error() {
+    let (status, body) = call(app(state()), "GET", "/api/nope", None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"]["code"], "not_found");
+    assert!(body["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("data-card"));
 }

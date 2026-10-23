@@ -27,6 +27,43 @@ impl ReferenceClient {
         }
     }
 
+    /// GET with one retry on a transport error or a 5xx. Reference data is
+    /// free to retry; paid fare sources are not.
+    async fn get(
+        &self,
+        url: &str,
+        query: &[(&str, &str)],
+    ) -> Result<reqwest::Response, SourceError> {
+        let attempt = |query: &[(&str, &str)]| {
+            let client = self.client.clone();
+            let url = url.to_string();
+            let query: Vec<(String, String)> = query
+                .iter()
+                .map(|(key, value)| (key.to_string(), value.to_string()))
+                .collect();
+            async move {
+                client
+                    .get(url)
+                    .query(&query)
+                    .send()
+                    .await
+                    .map_err(|error| SourceError::Unavailable(error.to_string()))
+            }
+        };
+
+        match attempt(query).await {
+            Ok(response) if response.status().is_server_error() => {
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                attempt(query).await
+            }
+            Ok(response) => Ok(response),
+            Err(_) => {
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                attempt(query).await
+            }
+        }
+    }
+
     pub async fn fx_rate(&self, base: &str, quote: &str) -> Result<FxRate, SourceError> {
         let base = base.to_uppercase();
         let quote = quote.to_uppercase();
@@ -44,10 +81,10 @@ impl ReferenceClient {
         }
 
         let response = self
-            .client
-            .get("https://api.frankfurter.app/latest")
-            .query(&[("from", base.as_str()), ("to", quote.as_str())])
-            .send()
+            .get(
+                "https://api.frankfurter.app/latest",
+                &[("from", base.as_str()), ("to", quote.as_str())],
+            )
             .await
             .map_err(|error| SourceError::Unavailable(format!("frankfurter: {error}")))?;
 
@@ -82,9 +119,7 @@ impl ReferenceClient {
         let country = country.to_uppercase();
         let url = format!("https://date.nager.at/api/v3/PublicHolidays/{year}/{country}");
         let response = self
-            .client
-            .get(url)
-            .send()
+            .get(&url, &[])
             .await
             .map_err(|error| SourceError::Unavailable(format!("nager.date: {error}")))?;
 

@@ -3,6 +3,7 @@
 pub mod config;
 pub mod error;
 mod handlers;
+mod ratelimit;
 
 use std::sync::Arc;
 
@@ -10,6 +11,7 @@ use axum::http::{HeaderValue, Method};
 use axum::routing::{get, post};
 use axum::Router;
 use chrono::{DateTime, Utc};
+use tower_http::catch_panic::CatchPanicLayer;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 
@@ -22,6 +24,7 @@ use faredesk_store::{Store, StoreError};
 
 pub use config::Config;
 pub use error::ApiError;
+pub use ratelimit::RateLimiter;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -34,6 +37,7 @@ struct Inner {
     fixtures: Arc<Source>,
     serpapi: Option<Arc<Source>>,
     reference_client: ReferenceClient,
+    limiter: RateLimiter,
     started_at: DateTime<Utc>,
 }
 
@@ -57,6 +61,7 @@ impl AppState {
         serpapi: Option<Source>,
     ) -> Result<Self, StoreError> {
         let store = Store::in_memory()?;
+        let limiter = RateLimiter::new(config.rate_limit_per_minute);
         Ok(Self {
             inner: Arc::new(Inner {
                 store,
@@ -64,6 +69,7 @@ impl AppState {
                 fixtures: Arc::new(fixtures),
                 serpapi: serpapi.map(Arc::new),
                 reference_client: ReferenceClient::new(),
+                limiter,
                 started_at: Utc::now(),
             }),
         })
@@ -86,6 +92,7 @@ impl AppState {
             Arc::new(Source::SerpApi(source))
         });
 
+        let limiter = RateLimiter::new(config.rate_limit_per_minute);
         Ok(Self {
             inner: Arc::new(Inner {
                 store,
@@ -93,6 +100,7 @@ impl AppState {
                 fixtures,
                 serpapi,
                 reference_client: ReferenceClient::new(),
+                limiter,
                 started_at: Utc::now(),
             }),
         })
@@ -116,6 +124,10 @@ impl AppState {
 
     pub fn reference_client(&self) -> &ReferenceClient {
         &self.inner.reference_client
+    }
+
+    pub fn rate_limiter(&self) -> &RateLimiter {
+        &self.inner.limiter
     }
 
     pub fn started_at(&self) -> DateTime<Utc> {
@@ -205,15 +217,24 @@ fn cabin_key(query: &SearchQuery) -> &'static str {
 pub fn app(state: AppState) -> Router {
     let cors = cors_layer(&state.inner.config.cors_origins);
 
+    let api = Router::new()
+        .route("/places", get(handlers::places))
+        .route("/routes", get(handlers::routes))
+        .route("/search", post(handlers::search))
+        .route("/reference/fx", get(handlers::fx))
+        .route("/reference/holidays", get(handlers::holidays))
+        .route("/reference/providers", get(handlers::providers))
+        .route("/data-card", get(handlers::data_cards))
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            handlers::rate_limit,
+        ));
+
     Router::new()
         .route("/healthz", get(handlers::health))
-        .route("/api/places", get(handlers::places))
-        .route("/api/routes", get(handlers::routes))
-        .route("/api/search", post(handlers::search))
-        .route("/api/reference/fx", get(handlers::fx))
-        .route("/api/reference/holidays", get(handlers::holidays))
-        .route("/api/reference/providers", get(handlers::providers))
-        .route("/api/data-card", get(handlers::data_cards))
+        .nest("/api", api)
+        .fallback(handlers::not_found)
+        .layer(CatchPanicLayer::new())
         .layer(TraceLayer::new_for_http())
         .layer(cors)
         .with_state(state)

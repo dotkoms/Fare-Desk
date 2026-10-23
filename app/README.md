@@ -120,6 +120,24 @@ node scripts/build-airports.mjs
 
 It joins [OurAirports](https://ourairports.com/data/) (public domain: airports, coordinates, scheduled service) with IANA timezones from [mwgg/Airports](https://github.com/mwgg/Airports) (MIT), keeping large and medium airports with scheduled service. Airports with no known timezone are omitted rather than guessed — 67 today. The generated file is committed so the binary builds and starts offline.
 
+## Errors
+
+Every failure is a JSON envelope, never an HTML error page or an empty body:
+
+```json
+{ "error": { "code": "quota_exhausted", "message": "…", "details": { "resetsOn": "2026-10-23" } } }
+```
+
+| Status | Codes |
+|---|---|
+| 400 | `missing_query`, `missing_origin`, `unknown_source`, `source_not_configured`, `source_rejected`, `invalid_party`, `invalid_bags`, `invalid_stops`, `invalid_currency`, `invalid_dates`, `date_in_past`, `date_too_far`, `same_place`, `return_trip_not_supported`, `unknown_dataset` |
+| 404 | `unknown_place`, `not_found` |
+| 429 | `rate_limited` (per-client window, `Retry-After`), `quota_exhausted` (`details.resetsOn`) |
+| 502 | `source_unavailable`, `source_bad_response` |
+| 500 | `internal` (a panic is caught and returned as this) |
+
+A degraded answer is still a 200: the response says `freshness: "stale"` or `degraded: true` with a reason, because the client can use it.
+
 ## Deploy
 
 The service is one binary with the reference dataset compiled in and a SQLite ledger on disk.
@@ -140,15 +158,16 @@ PORT=8080 DATABASE_PATH=/data/faredesk.sqlite ./target/release/faredesk-api
 - Mount `/data` (or set `DATABASE_PATH`) so the quota ledger and `fare_history` survive restarts.
 - Set `CORS_ORIGINS` to the deployed web origin; the defaults only cover local development.
 - The container runs as a non-root user and needs outbound HTTPS for SerpAPI, Frankfurter and Nager.Date.
-- There is no authentication or rate limiting in this release. Put the service behind a proxy or a platform gateway before exposing it publicly.
+- Rate limiting is on by default at 120 requests per client per minute (`RATE_LIMIT_PER_MINUTE`, `0` disables). Clients are keyed by `X-Forwarded-For`, then `X-Real-IP`, then the socket address; `/healthz` is exempt.
+- There is no authentication in this release. Put the service behind a proxy or a platform gateway before exposing it publicly.
 
-CI runs `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, the full test suite, and the web lint and build on every push (`.github/workflows/ci.yml`).
+CI runs `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, the full test suite, the web lint and build, and a Docker image build on every push (`.github/workflows/ci.yml`).
 
 ## Tests
 
 ```bash
 cd app
-cargo test          # 63 tests
+cargo test          # 69 tests
 cargo clippy --all-targets
 ```
 

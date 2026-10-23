@@ -9,6 +9,8 @@ pub struct Config {
     pub serpapi_base_url: Option<String>,
     pub serpapi_daily_limit: u32,
     pub cors_origins: Vec<String>,
+    /// Requests per client per minute. 0 disables the limiter.
+    pub rate_limit_per_minute: u32,
     pub search_cache_ttl: Duration,
     pub reference_cache_ttl: Duration,
 }
@@ -21,6 +23,7 @@ impl Default for Config {
             serpapi_key: None,
             serpapi_base_url: None,
             serpapi_daily_limit: 100,
+            rate_limit_per_minute: 120,
             cors_origins: vec![
                 "http://localhost:5173".into(),
                 "http://127.0.0.1:5173".into(),
@@ -66,6 +69,10 @@ impl Config {
                         .collect()
                 })
                 .unwrap_or(defaults.cors_origins),
+            rate_limit_per_minute: std::env::var("RATE_LIMIT_PER_MINUTE")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(defaults.rate_limit_per_minute),
             search_cache_ttl: defaults.search_cache_ttl,
             reference_cache_ttl: defaults.reference_cache_ttl,
         }
