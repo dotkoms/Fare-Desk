@@ -84,7 +84,7 @@ fleet/
 
 ## Run the app
 
-The web app and the data plane are separate; the web app still reads its bundled fixtures while Step 3 lands the API underneath.
+The web app and the data plane are separate services. In development the web app calls the local data plane and falls back to its bundled fixtures when the service is not running.
 
 ```bash
 # data plane: places, fares, reference data

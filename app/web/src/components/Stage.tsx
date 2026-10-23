@@ -23,6 +23,8 @@ type Props = {
   originCode: string
   destinationCode: string
   isDark: boolean
+  dataNote: string
+  loading: boolean
 }
 
 export default function Stage({
@@ -40,14 +42,20 @@ export default function Stage({
   originCode,
   destinationCode,
   isDark,
+  dataNote,
+  loading,
 }: Props) {
   if (!itinerary) {
     return (
-      <section className="stage stage-empty" aria-label="Selected flight">
+      <section className="stage stage-empty" aria-label="Selected flight" aria-busy={loading}>
         <div className="stage-empty-inner">
-          <span className="stage-kicker">No route selected</span>
-          <h2>Search a fixture route to see the fare desk.</h2>
-          <p>Try BER → LIS, BER → LHR, BER → BCN or BER → JFK.</p>
+          <span className="stage-kicker">{loading ? 'Searching' : 'No route selected'}</span>
+          <h2>{loading ? 'Asking the data plane for prices.' : 'Search a fixture route to see the fare desk.'}</h2>
+          <p>
+            {loading
+              ? 'The result list and the map update together.'
+              : 'Try BER → LIS, BER → LHR, BER → BCN or BER → JFK.'}
+          </p>
         </div>
       </section>
     )
@@ -60,8 +68,7 @@ export default function Stage({
           <span className="stage-kicker">{dateLabel}</span>
           <h2>{routeLabel}</h2>
           <p className="stage-sub">
-            {passengers} traveller{passengers === 1 ? '' : 's'} · {bags} checked bag{bags === 1 ? '' : 's'} · demo
-            fixtures
+            {passengers} traveller{passengers === 1 ? '' : 's'} · {bags} checked bag{bags === 1 ? '' : 's'} · {dataNote}
           </p>
         </div>
         <div className="stage-price">
@@ -123,7 +130,13 @@ export default function Stage({
             </div>
             <div>
               <span className="section-kicker">Bags</span>
-              <strong>{itinerary.bagsIncluded} checked</strong>
+              <strong>
+                {itinerary.bagsIncluded > 0
+                  ? `${itinerary.bagsIncluded} checked`
+                  : (itinerary.bagFee ?? 0) > 0
+                    ? `1 checked · €${itinerary.bagFee}`
+                    : 'Carry-on only'}
+              </strong>
             </div>
           </div>
 
@@ -138,7 +151,11 @@ export default function Stage({
             <div>
               <span className="section-kicker">Provider</span>
               <strong>{itinerary.provider}</strong>
-              <span className="provider-note">Verified {itinerary.verifiedMinutesAgo} min ago</span>
+              <span className="provider-note">
+                {itinerary.verifiedMinutesAgo === null
+                  ? 'Demo fare — not verified'
+                  : `Verified ${itinerary.verifiedMinutesAgo} min ago`}
+              </span>
             </div>
             <button className="button-primary" type="button" disabled title="Demo only — no booking">
               Open on {itinerary.provider} (demo)

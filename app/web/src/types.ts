@@ -23,11 +23,14 @@ export type Itinerary = {
   durationMinutes: number
   stops: number
   bagsIncluded: number
+  /** Money added for checked bags the fare does not include. */
+  bagFee?: number
   refundable: boolean
   changeFee: number
   provider: string
-  verifiedMinutesAgo: number
-  risk: Array<'Self-transfer' | 'OTA only'>
+  /** Null when the source could not confirm the price (fixtures, demo data). */
+  verifiedMinutesAgo: number | null
+  risk: Array<'Self-transfer' | 'OTA only' | 'Hidden city'>
   fareFamily: string
 }
 

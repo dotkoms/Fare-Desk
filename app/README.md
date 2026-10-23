@@ -29,6 +29,8 @@ cargo run -p faredesk-api
 
 The service listens on `http://127.0.0.1:8080`. With no `SERPAPI_KEY` it answers from the bundled fixture set — a full BER–LIS search, correctly priced for the party and bags, labelled as a fixture.
 
+The web app calls this service in development (`VITE_API_BASE`, default `http://127.0.0.1:8080`). If it is not running, the app falls back to its own bundled fixtures, says so above the results, and keeps working offline.
+
 ```bash
 curl -s "http://127.0.0.1:8080/api/places?q=lis"
 curl -s "http://127.0.0.1:8080/api/routes?origin=BER"
@@ -133,5 +135,6 @@ The integration tests in `crates/api/tests/api.rs` run the real router against a
 - **Live search is one direction.** A SerpAPI round trip returns only outbound segment detail while pricing the pair, so the API rejects `returnDate` on the live source instead of mislabelling it. Fixtures accept a return date and price one direction, with a note.
 - **Bag fees can be estimates.** When the source says a bag costs extra without naming the amount, the curated table in `core::pricing` is used and `bagFeeEstimated` is true.
 - **Children are priced at the adult fare.**
+- **The web app prices from this service but still holds its own demo history.** The buy/wait panel is fixture intelligence until Step 5.
 - **No scheduler yet.** History is written by live searches; Step 4 adds the daily collector.
 - **No point-of-sale screening, no alerts, no auth.** Those are Steps 6 and 8.

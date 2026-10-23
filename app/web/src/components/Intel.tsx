@@ -5,6 +5,21 @@ function clampPercent(value: number) {
   return Math.max(3, Math.min(97, value))
 }
 
+function ordinal(value: number) {
+  const remainder = value % 100
+  if (remainder >= 11 && remainder <= 13) return `${value}th`
+  switch (value % 10) {
+    case 1:
+      return `${value}st`
+    case 2:
+      return `${value}nd`
+    case 3:
+      return `${value}rd`
+    default:
+      return `${value}th`
+  }
+}
+
 export default function Intel({
   snapshot,
   currentPrice,
@@ -49,7 +64,7 @@ export default function Intel({
             <span>/ person</span>
           </div>
           <div className="intel-sub">
-            {percentile}th percentile · {snapshot.sample} observations
+            {ordinal(percentile)} percentile · {snapshot.sample} observations
           </div>
         </div>
         <span className={`recommendation recommendation-${recommendation.toLowerCase().replaceAll(' ', '-')}`}>

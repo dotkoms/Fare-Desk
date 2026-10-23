@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
+import DataBadge from './components/DataBadge'
 import Results from './components/Results'
 import SearchPanel from './components/SearchPanel'
 import Stage from './components/Stage'
+import { apiEnabled, localProvenance, searchFlights, type Provenance } from './lib/api'
 import { itinerariesByRoute, routeKey, snapshots } from './data/mock'
-import type { Query, Sort } from './types'
+import type { Itinerary, Query, Sort } from './types'
 
 const initialQuery: Query = {
   tripType: 'return',
@@ -46,6 +48,20 @@ function sortItineraries<T extends { total: number; durationMinutes: number }>(i
   return copy.sort((a, b) => bestScore(a.total, a.durationMinutes) - bestScore(b.total, b.durationMinutes))
 }
 
+function dataNote(provenance: Provenance | null) {
+  if (provenance?.source === 'fixtures') return 'demo fixtures'
+  switch (provenance?.freshness) {
+    case 'live':
+      return 'live prices'
+    case 'cached':
+      return 'cached prices'
+    case 'stale':
+      return 'last known prices'
+    default:
+      return 'demo fixtures'
+  }
+}
+
 type Theme = 'system' | 'light' | 'dark'
 
 function initialTheme(): Theme {
@@ -72,11 +88,32 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>(initialTheme)
   const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
 
-  const key = routeKey(activeQuery.origin, activeQuery.destination)
-  const itineraries = useMemo(() => itinerariesByRoute[key] ?? [], [key])
-  const sorted = useMemo(() => sortItineraries(itineraries, sort), [itineraries, sort])
+  const [results, setResults] = useState<Itinerary[]>([])
+  const [provenance, setProvenance] = useState<Provenance | null>(null)
+  const [loading, setLoading] = useState(apiEnabled)
+  const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  const route = routeKey(activeQuery.origin, activeQuery.destination)
+
+  // Without a data plane, the bundled fixtures are the answer and no request
+  // is attempted; that keeps the demo working when the API is not running.
+  const offlineResults = useMemo<Itinerary[]>(
+    () => (apiEnabled ? [] : (itinerariesByRoute[route] ?? [])),
+    [route],
+  )
+  const offlineProvenance = useMemo(
+    () => (apiEnabled ? null : localProvenance(offlineResults.length)),
+    [offlineResults.length],
+  )
+  const visibleResults = apiEnabled ? results : offlineResults
+  const visibleProvenance = apiEnabled ? provenance : offlineProvenance
+  const visibleLoading = apiEnabled && loading
+
+  const sorted = useMemo(() => sortItineraries(visibleResults, sort), [visibleResults, sort])
   const selected = sorted.find((itinerary) => itinerary.id === selectedId) ?? sorted[0] ?? null
-  const snapshot = snapshots[key] ?? null
+  const snapshot = snapshots[route] ?? null
   const routeLabel = `${activeQuery.origin} → ${activeQuery.destination}`
 
   useEffect(() => {
@@ -85,6 +122,40 @@ export default function App() {
     query.addEventListener('change', onChange)
     return () => query.removeEventListener('change', onChange)
   }, [])
+
+  useEffect(() => {
+    if (!apiEnabled) return
+
+    let cancelled = false
+
+    async function load() {
+      setError(null)
+      setNotice(null)
+      setLoading(true)
+      setResults([])
+      setProvenance(null)
+      try {
+        const outcome = await searchFlights(activeQuery)
+        if (cancelled) return
+        setResults(outcome.itineraries)
+        setProvenance(outcome.provenance)
+        setNotice(outcome.notice ?? outcome.provenance.degradedReason ?? null)
+      } catch (cause) {
+        if (cancelled) return
+        setResults([])
+        setProvenance(null)
+        setError(cause instanceof Error ? cause.message : 'Could not load flights.')
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+
+    void load()
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeQuery, refreshKey])
 
   const isDark = theme === 'dark' || (theme === 'system' && systemDark)
 
@@ -109,11 +180,12 @@ export default function App() {
             </div>
             <div className="brand-tag">Independent flight intelligence</div>
           </div>
-          <span className="demo-badge">Demo data</span>
+          <DataBadge provenance={visibleProvenance} loading={visibleLoading} error={error} />
         </header>
 
         <SearchPanel
           query={query}
+          dataNote={dataNote(visibleProvenance)}
           onChange={(patch) => setQuery((current) => ({ ...current, ...patch }))}
           onSearch={() => {
             setActiveQuery(query)
@@ -135,6 +207,10 @@ export default function App() {
           }}
           sort={sort}
           onSort={setSort}
+          loading={visibleLoading}
+          error={error}
+          notice={notice}
+          onRetry={() => setRefreshKey((key) => key + 1)}
         />
 
         <div className="console-footer">
@@ -158,6 +234,8 @@ export default function App() {
           dateLabel={formatDateRange(activeQuery)}
           passengers={activeQuery.passengers}
           bags={activeQuery.bags}
+          dataNote={dataNote(visibleProvenance)}
+          loading={visibleLoading}
           itineraries={sorted}
           selectedId={selected?.id ?? null}
           onSelect={setSelectedId}

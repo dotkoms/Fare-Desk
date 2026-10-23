@@ -5,6 +5,7 @@ type Props = {
   query: Query
   onChange: (patch: Partial<Query>) => void
   onSearch: () => void
+  dataNote: string
 }
 
 function AirportSelect({
@@ -30,7 +31,7 @@ function AirportSelect({
   )
 }
 
-export default function SearchPanel({ query, onChange, onSearch }: Props) {
+export default function SearchPanel({ query, onChange, onSearch, dataNote }: Props) {
   return (
     <form
       className="search-panel"
@@ -123,7 +124,7 @@ export default function SearchPanel({ query, onChange, onSearch }: Props) {
       </button>
 
       <p className="search-note">
-        Demo fixtures only. Live prices arrive with the SerpAPI adapter.
+        Pricing: {dataNote}. Fare Desk links out; it never books or takes payment.
       </p>
     </form>
   )

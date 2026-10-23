@@ -4,7 +4,7 @@ A 3D globe of airports and routes, a search console on the left, and a route pag
 
 **Scope:** flights only. Trains and coaches are future work, not v1.
 
-**Status:** Steps 1–3 of [22-build-planner.md](docs/22-build-planner.md) are built. `app/web` holds the list-first shell and globe v0; `app/crates` holds the Rust data plane (places, search, reference data, cache, quota, provenance). The web app still reads fixtures; wiring it to the API is the next piece. Live fares need `SERPAPI_KEY`. [docs/23-2d-poster-map.md](docs/23-2d-poster-map.md) proposes replacing the 3D globe with a flat poster map; the decision is open.
+**Status:** Steps 1–3 of [22-build-planner.md](docs/22-build-planner.md) are built. `app/web` holds the list-first shell and globe v0; `app/crates` holds the Rust data plane (places, search, reference data, cache, quota, provenance). The web app now prices from the data plane in development (and falls back to bundled fixtures when it is not running); the buy/wait panel still uses demo history. Live fares need `SERPAPI_KEY`. [docs/23-2d-poster-map.md](docs/23-2d-poster-map.md) proposes replacing the 3D globe with a flat poster map; the decision is open.
 
 ---
 

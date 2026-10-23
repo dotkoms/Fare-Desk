@@ -8,11 +8,24 @@ type Props = {
   onIntel: (id: string) => void
   sort: Sort
   onSort: (sort: Sort) => void
+  loading: boolean
+  error: string | null
+  notice: string | null
+  onRetry: () => void
 }
 
 function stopLabel(stops: number) {
   if (stops === 0) return 'Nonstop'
   return `${stops} stop${stops > 1 ? 's' : ''}`
+}
+
+function bagLabel(itinerary: Itinerary) {
+  const fee = itinerary.bagFee ?? 0
+  if (itinerary.bagsIncluded > 0) {
+    return `${itinerary.bagsIncluded} checked bag${itinerary.bagsIncluded > 1 ? 's' : ''} included`
+  }
+  if (fee > 0) return `Bag added · €${fee}`
+  return 'Carry-on only'
 }
 
 function ResultCard({
@@ -54,14 +67,16 @@ function ResultCard({
             €{itinerary.total} <small>total</small>
           </span>
           <span className="result-bag">
-            {itinerary.bagsIncluded > 0
-              ? `${itinerary.bagsIncluded} checked bag${itinerary.bagsIncluded > 1 ? 's' : ''}`
-              : 'Carry-on only'}
+            {bagLabel(itinerary)}
           </span>
         </div>
 
         <div className="result-tags">
-          <span className="tag-verified">Verified {itinerary.verifiedMinutesAgo} min ago</span>
+          {itinerary.verifiedMinutesAgo === null ? (
+            <span className="tag-demo">Demo fare</span>
+          ) : (
+            <span className="tag-verified">Verified {itinerary.verifiedMinutesAgo} min ago</span>
+          )}
           {itinerary.risk.map((risk) => (
             <span className="tag-risk" key={risk}>
               {risk}
@@ -77,14 +92,27 @@ function ResultCard({
   )
 }
 
-export default function Results({ itineraries, selectedId, onSelect, onIntel, sort, onSort }: Props) {
+export default function Results({
+  itineraries,
+  selectedId,
+  onSelect,
+  onIntel,
+  sort,
+  onSort,
+  loading,
+  error,
+  notice,
+  onRetry,
+}: Props) {
   return (
-    <section className="results" aria-label="Flight results">
+    <section className="results" aria-label="Flight results" aria-busy={loading}>
       <div className="results-head">
         <div>
           <span className="section-kicker">Results</span>
           <strong>
-            {itineraries.length} flight{itineraries.length === 1 ? '' : 's'}
+            {loading
+              ? 'Searching…'
+              : `${itineraries.length} flight${itineraries.length === 1 ? '' : 's'}`}
           </strong>
         </div>
         <label className="sort-field">
@@ -97,10 +125,31 @@ export default function Results({ itineraries, selectedId, onSelect, onIntel, so
         </label>
       </div>
 
+      {notice ? (
+        <p className="results-notice" role="status">
+          {notice}
+        </p>
+      ) : null}
+
       <div className="result-list">
-        {itineraries.length === 0 ? (
+        {loading && itineraries.length === 0 ? (
+          <div className="result-loading" role="status">
+            <span className="sr-only">Searching flights</span>
+            <span className="result-skeleton" aria-hidden="true" />
+            <span className="result-skeleton" aria-hidden="true" />
+            <span className="result-skeleton" aria-hidden="true" />
+          </div>
+        ) : error ? (
           <div className="empty-state">
-            <h3>No fixture route for this pair.</h3>
+            <h3>Could not load flights.</h3>
+            <p>{error}</p>
+            <button className="button-secondary" type="button" onClick={onRetry}>
+              Try again
+            </button>
+          </div>
+        ) : itineraries.length === 0 ? (
+          <div className="empty-state">
+            <h3>No flights found for this pair.</h3>
             <p>Try BER → LIS, BER → LHR, BER → BCN or BER → JFK.</p>
           </div>
         ) : (
