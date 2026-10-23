@@ -1071,3 +1071,97 @@ async fn alerts_validate_the_email_and_threshold() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(error["error"]["code"], "invalid_threshold");
 }
+
+#[tokio::test]
+async fn fixture_return_search_prices_both_directions() {
+    let mut body = search_body("BER", "LIS");
+    let back = (Utc::now().date_naive() + ChronoDuration::days(67))
+        .format("%Y-%m-%d")
+        .to_string();
+    body["returnDate"] = json!(back);
+    let (status, body) = call(app(state()), "POST", "/api/search", Some(body)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["query"]["returnDate"], json!(back));
+    assert_eq!(body["itineraries"].as_array().unwrap().len(), 5);
+    let returns = body["returnItineraries"].as_array().expect("return flights");
+    assert_eq!(returns.len(), 5);
+    for itinerary in returns {
+        let segments = itinerary["segments"].as_array().unwrap();
+        assert_eq!(segments[0]["from"]["code"], "LIS");
+        assert_eq!(segments.last().unwrap()["to"]["code"], "BER");
+        assert!(segments[0]["departLocal"]
+            .as_str()
+            .unwrap()
+            .starts_with(&back));
+    }
+    assert!(body["provenance"]["notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|note| note.as_str().unwrap().contains("two one-way tickets")));
+}
+
+/// A stand-in for SerpAPI: one nonstop each way, priced by direction.
+async fn mock_serpapi() -> String {
+    use axum::extract::Query as AxumQuery;
+    use axum::routing::get;
+
+    async fn handler(AxumQuery(params): AxumQuery<HashMap<String, String>>) -> axum::Json<Value> {
+        let from = params["departure_id"].clone();
+        let to = params["arrival_id"].clone();
+        let date = params["outbound_date"].clone();
+        let price = if from == "BER" { 111.0 } else { 99.0 };
+        axum::Json(json!({
+            "best_flights": [{
+                "flights": [{
+                    "departure_airport": { "id": from, "time": format!("{date} 08:00") },
+                    "arrival_airport": { "id": to, "time": format!("{date} 10:40") },
+                    "duration": 220,
+                    "airline": "TAP Air Portugal",
+                    "travel_class": "Economy",
+                    "flight_number": "TP 1041"
+                }],
+                "price": price,
+                "total_duration": 220,
+                "extensions": []
+            }]
+        }))
+    }
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, axum::Router::new().route("/search.json", get(handler)))
+            .await
+            .unwrap();
+    });
+    format!("http://{addr}/search.json")
+}
+
+#[tokio::test]
+async fn live_return_search_is_two_metered_one_way_searches() {
+    let base = mock_serpapi().await;
+    let state = AppState::in_memory(Config {
+        ground_routing: false,
+        transit_routing: false,
+        serpapi_key: Some("test-key".into()),
+        serpapi_base_url: Some(base),
+        ..Config::default()
+    })
+    .expect("state");
+    let mut body = search_body("BER", "LIS");
+    let back = (Utc::now().date_naive() + ChronoDuration::days(67))
+        .format("%Y-%m-%d")
+        .to_string();
+    body["returnDate"] = json!(back);
+
+    let (status, body) = call(app(state.clone()), "POST", "/api/search", Some(body)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["provenance"]["freshness"], "live");
+    assert_eq!(body["itineraries"][0]["totalPrice"], 111.0);
+    assert_eq!(body["returnItineraries"][0]["totalPrice"], 99.0);
+    assert_eq!(body["returnItineraries"][0]["segments"][0]["from"]["code"], "LIS");
+
+    let (_, health) = call(app(state), "GET", "/healthz", None).await;
+    assert_eq!(health["sources"][1]["usedToday"], 2, "{health}");
+}

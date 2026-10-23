@@ -25,6 +25,8 @@ export type Provenance = {
 
 export type SearchOutcome = {
   itineraries: Itinerary[]
+  /** Return flights for a round trip, each its own one-way ticket. Empty for one way. */
+  returns: Itinerary[]
   provenance: Provenance
 }
 
@@ -83,6 +85,7 @@ type ApiItinerary = {
 
 type ApiSearchResponse = {
   itineraries: ApiItinerary[]
+  returnItineraries?: ApiItinerary[]
   provenance: Provenance
 }
 
@@ -191,7 +194,11 @@ export async function searchFlights(query: Query): Promise<SearchOutcome> {
       source: 'auto',
     }),
   })
-  return { itineraries: payload.itineraries.map(toItinerary), provenance: payload.provenance }
+  return {
+    itineraries: payload.itineraries.map(toItinerary),
+    returns: (payload.returnItineraries ?? []).map(toItinerary),
+    provenance: payload.provenance,
+  }
 }
 
 export async function searchPlaces(text: string, signal?: AbortSignal): Promise<Place[]> {

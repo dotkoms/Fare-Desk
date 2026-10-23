@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use chrono::{DateTime, Duration, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, Duration, NaiveDate, TimeZone, Timelike, Utc};
 use chrono_tz::Tz;
 use faredesk_core::{Bags, Cabin, FareRules, Offer, Place, Provider, Risk, Segment};
 
@@ -40,22 +40,80 @@ impl FixtureSource {
                     continue;
                 }
             }
-            offers.push(self.build(fixture, query)?);
+            offers.push(self.build(fixture, fixture.legs, query, false)?);
+        }
+        // The demo network is drawn one way. A return search asks for the reverse
+        // route, so fly the same services back on a mirrored schedule.
+        if offers.is_empty() {
+            for fixture in all_fixtures() {
+                if fixture.origin != route.1 || fixture.destination != route.0 {
+                    continue;
+                }
+                if let Some(max) = query.request.max_stops {
+                    if fixture.legs.len().saturating_sub(1) as u8 > max {
+                        continue;
+                    }
+                }
+                let legs = self.mirror(fixture, query.request.depart_date)?;
+                offers.push(self.build(fixture, &legs, query, true)?);
+            }
         }
         Ok(offers)
+    }
+
+    /// The fixture's legs reversed: same carriers and aircraft, flight numbers one
+    /// higher, departing mid-day with 75-minute connections.
+    fn mirror(&self, fixture: &FixtureOffer, date: NaiveDate) -> Result<Vec<Leg>, SourceError> {
+        const CONNECTION_MINUTES: i64 = 75;
+        let mut legs = Vec::with_capacity(fixture.legs.len());
+        let mut next_departure: Option<DateTime<Utc>> = None;
+        for leg in fixture.legs.iter().rev() {
+            let from = self.place(leg.to)?;
+            let (hour, minute) = match next_departure {
+                None => (6 + leg.hour % 12, leg.minute),
+                Some(instant) => {
+                    let tz: Tz = from.timezone.parse().map_err(|_| {
+                        SourceError::Unavailable(format!("unknown timezone {}", from.timezone))
+                    })?;
+                    let local = instant.with_timezone(&tz);
+                    (local.hour(), local.minute())
+                }
+            };
+            let depart = depart_at(from, date, hour, minute)?;
+            next_departure = Some(
+                depart
+                    + Duration::minutes(i64::from(leg.minutes))
+                    + Duration::minutes(CONNECTION_MINUTES),
+            );
+            legs.push(Leg {
+                from: leg.to,
+                to: leg.from,
+                hour,
+                minute,
+                ..*leg
+            });
+        }
+        Ok(legs)
     }
 
     fn build(
         &self,
         fixture: &FixtureOffer,
+        fixture_legs: &[Leg],
         query: &ResolvedQuery<'_>,
+        mirrored: bool,
     ) -> Result<Offer, SourceError> {
         let date = query.request.depart_date;
         let mut segments = Vec::with_capacity(fixture.legs.len());
         let mut first_departure: Option<DateTime<Utc>> = None;
         let mut last_arrival: Option<DateTime<Utc>> = None;
 
-        for leg in fixture.legs {
+        for leg in fixture_legs {
+            let number = if mirrored {
+                next_flight_number(leg.number)
+            } else {
+                leg.number.to_string()
+            };
             let from = self.place(leg.from)?;
             let to = self.place(leg.to)?;
             let depart = depart_at(from, date, leg.hour, leg.minute)?;
@@ -66,12 +124,12 @@ impl FixtureSource {
                 id: format!(
                     "{}-{}-{}",
                     leg.carrier.replace(' ', ""),
-                    leg.number.replace(' ', ""),
+                    number.replace(' ', ""),
                     date
                 ),
                 marketing_carrier: leg.carrier.to_string(),
                 operating_carrier: leg.carrier.to_string(),
-                service_number: leg.number.to_string(),
+                service_number: number,
                 from: from.clone(),
                 to: to.clone(),
                 depart_terminal: None,
@@ -152,6 +210,7 @@ pub const PLACE_CODES: &[&str] = &[
     "BER", "LIS", "LHR", "BCN", "JFK", "STN", "MAD", "FRA", "AMS",
 ];
 
+#[derive(Clone, Copy)]
 struct Leg {
     carrier: &'static str,
     number: &'static str,
@@ -628,6 +687,16 @@ const BER_JFK: &[FixtureOffer] = &[
 ];
 
 const FIXTURES: &[&[FixtureOffer]] = &[BER_LIS, BER_LHR, BER_BCN, BER_JFK];
+
+/// "TP 1041" → "TP 1042": the return service of a demo flight.
+fn next_flight_number(number: &str) -> String {
+    let split = number.trim_end_matches(|c: char| c.is_ascii_digit()).len();
+    let (prefix, digits) = number.split_at(split);
+    match digits.parse::<u32>() {
+        Ok(value) => format!("{prefix}{}", value + 1),
+        Err(_) => number.to_string(),
+    }
+}
 
 fn all_fixtures() -> impl Iterator<Item = &'static FixtureOffer> {
     FIXTURES.iter().flat_map(|route| route.iter())

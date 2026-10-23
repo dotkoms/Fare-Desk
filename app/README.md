@@ -287,7 +287,7 @@ Every failure is a JSON envelope, never an HTML error page or an empty body:
 
 | Status | Codes |
 |---|---|
-| 400 | `missing_query`, `missing_origin`, `unknown_source`, `source_not_configured`, `source_rejected`, `invalid_party`, `invalid_bags`, `invalid_stops`, `invalid_currency`, `invalid_dates`, `date_in_past`, `date_too_far`, `same_place`, `return_trip_not_supported`, `unknown_dataset` |
+| 400 | `missing_query`, `missing_origin`, `unknown_source`, `source_not_configured`, `source_rejected`, `invalid_party`, `invalid_bags`, `invalid_stops`, `invalid_currency`, `invalid_dates`, `date_in_past`, `date_too_far`, `same_place`, `unknown_dataset` |
 | 404 | `unknown_place`, `not_found` |
 | 429 | `rate_limited` (per-client window, `Retry-After`), `quota_exhausted` (`details.resetsOn`) |
 | 502 | `source_unavailable`, `source_bad_response` |
@@ -332,7 +332,7 @@ The integration tests in `crates/api/tests/api.rs` run the real router against a
 
 ## Known limits in this step
 
-- **Live search is one direction.** A SerpAPI round trip returns only outbound segment detail while pricing the pair, so the API rejects `returnDate` on the live source instead of mislabelling it. Fixtures accept a return date and price one direction, with a note.
+- **Returns are two one-way tickets.** A SerpAPI round trip returns only outbound segment detail while pricing the pair, so a search with `returnDate` runs two one-way searches (two metered calls, each cached) and answers with `itineraries` (outbound) and `returnItineraries` (destination back to origin), each priced on its own. True round-trip fares, which can be cheaper on the provider, are not priced yet. Fixtures fly the demo network back on a mirrored schedule.
 - **Bag fees can be estimates.** When the source says a bag costs extra without naming the amount, the curated table in `core::pricing` is used and `bagFeeEstimated` is true.
 - **Children are priced at the adult fare.**
 - **The web app prices from this service but still holds its own demo history.** The buy/wait panel is fixture intelligence until Step 5.

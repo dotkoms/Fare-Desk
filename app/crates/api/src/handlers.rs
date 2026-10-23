@@ -25,7 +25,7 @@ use faredesk_core::{
     ProvidersResponse, Recommendation, RouteIntel, RouteIntelResponse, RouteSummary,
     RoutesResponse, SearchQuery, SearchResponse, SearchSnapshot, Sort, MIN_OBSERVATIONS,
 };
-use faredesk_sources::{fixtures, ResolvedQuery, SourceError};
+use faredesk_sources::{fixtures, ResolvedQuery, Source, SourceError};
 use faredesk_store::{access_for, access_note};
 use faredesk_store::{Cached, QuotaOutcome};
 
@@ -553,12 +553,6 @@ pub async fn search(
     let source = state.source(requested_source.as_deref())?;
     let live = source.is_live();
 
-    if live && query.return_date.is_some() {
-        return Err(ApiError::bad_request(
-            "return_trip_not_supported",
-            "The live source prices one direction at a time in this release. Search each leg separately, or use source=fixtures for the demo round trip.",
-        ));
-    }
     if !live && query.currency != "EUR" {
         return Err(ApiError::bad_request(
             "unsupported_currency",
@@ -566,11 +560,66 @@ pub async fn search(
         ));
     }
 
+    // A return is two one-way searches through the same cached, metered path: the live
+    // source prices one direction at a time, and the traveller buys two tickets.
+    let outbound_query = SearchQuery {
+        return_date: None,
+        ..query.clone()
+    };
+    let mut response =
+        search_direction(&state, &source, outbound_query, &origin, &destination).await?;
+
+    if let Some(return_date) = query.return_date {
+        let inbound_query = SearchQuery {
+            origin: destination.code.clone(),
+            destination: origin.code.clone(),
+            depart_date: return_date,
+            return_date: None,
+            ..query.clone()
+        };
+        match search_direction(&state, &source, inbound_query, &destination, &origin).await {
+            Ok(inbound) => {
+                response.provenance.sample_size += inbound.itineraries.len();
+                if inbound.provenance.degraded {
+                    response.provenance.degraded = true;
+                    response.provenance.degraded_reason = inbound
+                        .provenance
+                        .degraded_reason
+                        .map(|reason| format!("Return flights: {reason}"));
+                }
+                response.return_itineraries = inbound.itineraries;
+            }
+            Err(error) => {
+                response.provenance.degraded = true;
+                response.provenance.degraded_reason =
+                    Some(format!("Return flights are unavailable: {}", error.message));
+            }
+        }
+        response.provenance.notes.push(
+            "Outbound and return are priced as two one-way tickets; a round-trip fare on the provider can differ."
+                .to_string(),
+        );
+    }
+
+    response.query = query;
+    Ok(Json(response))
+}
+
+/// One direction of a search: cache, quota, source, pricing, MCT warnings and history.
+async fn search_direction(
+    state: &AppState,
+    source: &Source,
+    query: SearchQuery,
+    origin: &Place,
+    destination: &Place,
+) -> Result<SearchResponse, ApiError> {
+    let live = source.is_live();
+
     let route = format!("{}-{}", origin.code, destination.code);
     let key = crate::search_cache_key(source.id(), &query, &origin.code, &destination.code);
 
     if let Some(cached) = state.store().search_cache.get(&key) {
-        return Ok(Json(response_from_snapshot(
+        return Ok(response_from_snapshot(
             &query,
             &route,
             cached,
@@ -578,7 +627,7 @@ pub async fn search(
             source.id(),
             Freshness::Cached,
             None,
-        )));
+        ));
     }
 
     if live {
@@ -591,7 +640,7 @@ pub async fn search(
             Ok(QuotaOutcome::Granted { .. }) => {}
             Ok(QuotaOutcome::Exhausted { reset_on, .. }) => {
                 if let Some(stale) = state.store().search_cache.get_stale(&key) {
-                    return Ok(Json(response_from_snapshot(
+                    return Ok(response_from_snapshot(
                         &query,
                         &route,
                         stale,
@@ -601,7 +650,7 @@ pub async fn search(
                         Some(
                             "The daily source quota is spent; showing the last good result.".into(),
                         ),
-                    )));
+                    ));
                 }
                 return Err(ApiError::quota_exhausted(
                     "The daily source quota is spent. Try again tomorrow, or ask for source=fixtures.",
@@ -616,15 +665,15 @@ pub async fn search(
 
     let resolved = ResolvedQuery {
         request: &query,
-        origin: &origin,
-        destination: &destination,
+        origin,
+        destination,
     };
 
     let offers = match source.search(&resolved).await {
         Ok(offers) => offers,
         Err(error) => {
             if let Some(stale) = state.store().search_cache.get_stale(&key) {
-                return Ok(Json(response_from_snapshot(
+                return Ok(response_from_snapshot(
                     &query,
                     &route,
                     stale,
@@ -634,7 +683,7 @@ pub async fn search(
                     Some(format!(
                         "The live source failed ({error}); showing the last good result."
                     )),
-                )));
+                ));
             }
             return Err(match error {
                 SourceError::InvalidRequest(message) => {
@@ -710,12 +759,13 @@ pub async fn search(
     provenance.expires_at = Some(observed_at + ttl_duration(ttl));
     provenance.notes = notes;
 
-    Ok(Json(SearchResponse {
+    Ok(SearchResponse {
         query,
         route,
         itineraries,
+        return_itineraries: Vec::new(),
         provenance,
-    }))
+    })
 }
 
 fn response_from_snapshot(
@@ -740,6 +790,7 @@ fn response_from_snapshot(
         query: query.clone(),
         route: route.to_string(),
         itineraries: cached.value.itineraries,
+        return_itineraries: Vec::new(),
         provenance,
     }
 }
@@ -805,12 +856,6 @@ fn notes_for(
     let mut notes = Vec::new();
     if !live {
         notes.push("Demo fixture prices; they do not vary with the date.".to_string());
-    }
-    if query.return_date.is_some() {
-        notes.push(
-            "Return leg is priced separately in this release; totals cover one direction."
-                .to_string(),
-        );
     }
     if query.children > 0 {
         notes.push("Children are priced at the adult fare in this release.".to_string());
