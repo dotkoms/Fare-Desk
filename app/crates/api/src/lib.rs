@@ -21,6 +21,7 @@ use faredesk_sources::fixtures::FixtureSource;
 use faredesk_sources::ground::GroundClient;
 use faredesk_sources::reference_data::ReferenceClient;
 use faredesk_sources::serpapi::SerpApiSource;
+use faredesk_sources::transit::TransitClient;
 use faredesk_sources::Source;
 use faredesk_store::{Store, StoreError};
 
@@ -41,6 +42,7 @@ struct Inner {
     reference_client: ReferenceClient,
     climate_client: ClimateClient,
     ground_client: GroundClient,
+    transit_client: TransitClient,
     limiter: RateLimiter,
     started_at: DateTime<Utc>,
 }
@@ -75,6 +77,7 @@ impl AppState {
                 reference_client: ReferenceClient::new(),
                 climate_client: ClimateClient::new(),
                 ground_client: GroundClient::new(),
+                transit_client: TransitClient::new(),
                 limiter,
                 started_at: Utc::now(),
             }),
@@ -108,6 +111,7 @@ impl AppState {
                 reference_client: ReferenceClient::new(),
                 climate_client: ClimateClient::new(),
                 ground_client: GroundClient::new(),
+                transit_client: TransitClient::new(),
                 limiter,
                 started_at: Utc::now(),
             }),
@@ -140,6 +144,10 @@ impl AppState {
 
     pub fn ground_client(&self) -> &GroundClient {
         &self.inner.ground_client
+    }
+
+    pub fn transit_client(&self) -> &TransitClient {
+        &self.inner.transit_client
     }
 
     pub fn rate_limiter(&self) -> &RateLimiter {

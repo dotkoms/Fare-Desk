@@ -154,11 +154,12 @@ pub fn data_cards(airports_updated_at: DateTime<Utc>, airports_source: String) -
             Dataset::Access,
             "Curated estimates",
             "GPL-3.0-or-later",
-            "City-centre transfer times and costs plus minimum connection times for launch airports. Estimates, not live routing or GTFS.",
+            "City-centre transfer estimates and minimum connection times for launch airports, plus live driving (OSRM over OpenStreetMap) and public-transit (Transitous) legs from the city centre. Curated rows are typical estimates; live legs are one representative departure.",
             release,
             &[
                 "Times are typical, not live.",
                 "Minimum connection times are guidance for a single ticket; verify with the operator.",
+                "Driving legs use OSRM; transit legs use Transitous (GTFS feeds per operator).",
             ],
         ),
         card(

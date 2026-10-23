@@ -22,6 +22,7 @@ fn state() -> AppState {
     // Ground routing is off so tests never call OSRM.
     AppState::in_memory(Config {
         ground_routing: false,
+        transit_routing: false,
         ..Config::default()
     })
     .expect("state")

@@ -1930,6 +1930,48 @@ pub async fn airport_access(
         }
     }
 
+    // A real public-transit leg at a representative weekday morning.
+    let mut transit = None;
+    if state.config().transit_routing {
+        if let Some(center) = access.as_ref().and_then(|value| value.city_center) {
+            let depart_day = now().date_naive() + Duration::days(1);
+            let depart_at = depart_day
+                .and_hms_opt(9, 0, 0)
+                .map(|time| DateTime::<Utc>::from_naive_utc_and_offset(time, Utc));
+            if let Some(depart_at) = depart_at {
+                let key = format!(
+                    "transit:{:.4},{:.4}:{:.4},{:.4}:{}",
+                    center.lat,
+                    center.lng,
+                    place.lat,
+                    place.lng,
+                    depart_day.format("%Y-%m-%d")
+                );
+                let ttl = std::time::Duration::from_secs(24 * 60 * 60);
+                if let Some(cached) = state.store().transit_cache.get(&key) {
+                    transit = Some(cached.value);
+                } else {
+                    match state
+                        .transit_client()
+                        .fastest_leg((center.lat, center.lng), (place.lat, place.lng), depart_at)
+                        .await
+                    {
+                        Ok(leg) => {
+                            transit = Some(leg.clone());
+                            state.store().transit_cache.insert(key, leg, ttl);
+                        }
+                        Err(error) => {
+                            provenance.degraded = true;
+                            provenance.degraded_reason = Some(format!(
+                                "Live transit routing is unavailable ({error}); curated transfers only."
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     Ok(Json(AirportAccessResponse {
         place,
         city_center: access.as_ref().and_then(|value| value.city_center),
@@ -1939,6 +1981,7 @@ pub async fn airport_access(
             .unwrap_or_default(),
         mct: access.as_ref().and_then(|value| value.mct),
         drive,
+        transit,
         provenance,
     }))
 }

@@ -175,7 +175,7 @@ Daily cron, 06:07:
 
 ## Airport access and connection times
 
-`GET /api/airport-access?airport=BER` returns the airport's city-centre transfers (mode, typical minutes, one-way cost in local currency), a live driving leg from OSRM (minutes, km) and minimum connection times for domestic and international connections. The OSRM leg is cached for 30 days and can be disabled with `GROUND_ROUTING=off`.
+`GET /api/airport-access?airport=BER` returns the airport's city-centre transfers (mode, typical minutes, one-way cost in local currency), a live driving leg from OSRM (minutes, km), a live public-transit leg from Transitous (minutes, transfers) and minimum connection times for domestic and international connections. The OSRM leg is cached for 30 days, the transit leg for 24 hours at a representative 09:00 weekday departure. `GROUND_ROUTING=off` and `TRANSIT_ROUTING=off` disable the live legs.
 
 The table in [`data/access.json`](data/access.json) covers thirteen launch airports and is **curated**, not live routing: times are typical, costs are one adult one way, and MCTs are guidance for a single ticket. Every response says so and carries the `airport-access` data card. Airports without an entry return an empty list with a note, not a 404.
 
@@ -183,7 +183,7 @@ The table in [`data/access.json`](data/access.json) covers thirteen launch airpo
 
 Search results also carry `connectionWarnings`: any connection whose layover is below the airport's minimum connection time is called out by name and minutes.
 
-Still missing from this step: full 30/60/90-minute public-transit isochrones (OSRM gives a driving leg, not GTFS routing) and US BTS reliability data with a reliability-adjusted price.
+Still missing from this step: true 30/60/90-minute reach isochrones (we have one representative route, not an isochrone) and US BTS reliability data with a reliability-adjusted price.
 
 ## Point of sale
 
@@ -265,7 +265,7 @@ CI runs `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, the fu
 
 ```bash
 cd app
-cargo test          # 123 tests
+cargo test          # 124 tests
 cargo clippy --all-targets
 ```
 

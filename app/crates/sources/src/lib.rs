@@ -5,6 +5,7 @@ pub mod fixtures;
 pub mod ground;
 pub mod reference_data;
 pub mod serpapi;
+pub mod transit;
 
 use faredesk_core::{Offer, Place, SearchQuery};
 

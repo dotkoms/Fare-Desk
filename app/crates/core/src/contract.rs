@@ -737,6 +737,8 @@ pub struct AirportAccessResponse {
     pub mct: Option<Mct>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub drive: Option<GroundLeg>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub transit: Option<TransitLeg>,
     pub provenance: Provenance,
 }
 
@@ -778,4 +780,12 @@ pub struct DoorToDoorResponse {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub destination: Option<DoorToDoorLeg>,
     pub provenance: Provenance,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransitLeg {
+    pub minutes: u32,
+    pub transfers: u32,
+    pub source: String,
 }
