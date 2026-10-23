@@ -1236,3 +1236,106 @@ button:disabled {
     animation-duration: 0.001ms !important;
   }
 }
+
+/* Nagai globe (MapLibre spike): poster sky behind a transparent canvas, flat globe, palms in front */
+.nagai-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.nagai-sky {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.nagai-horizon {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+}
+
+.nagai-sun {
+  position: absolute;
+  left: 62%;
+  top: -66px;
+}
+
+.nagai-cumulus {
+  position: absolute;
+}
+
+.nagai-cumulus-left {
+  left: 22%;
+  top: -118px;
+}
+
+.nagai-cumulus-right {
+  left: 74%;
+  top: -88px;
+}
+
+.nagai-map {
+  position: absolute;
+  inset: 0;
+}
+
+.nagai-map .maplibregl-canvas {
+  outline: none;
+}
+
+.nagai-palms {
+  position: absolute;
+  top: 0;
+  right: 0;
+  pointer-events: none;
+}
+
+.nagai-label {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 3px 8px;
+  border: 1px solid #12324b;
+  background: #fdf8ee;
+  box-shadow: 2px 2px 0 #12324b;
+  color: #12324b;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.nagai-label span {
+  color: #3e5567;
+}
+
+.nagai-label.is-minor {
+  padding: 1px 5px;
+  border: 0;
+  box-shadow: none;
+  font-size: 11px;
+}
+
+.nagai-label.is-minor strong {
+  font-weight: 400;
+}
+
+.nagai-chip {
+  padding: 3px 8px;
+  background: #12324b;
+  color: #fdf8ee;
+  box-shadow: 2px 2px 0 #fdf8ee;
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.stage-map:has(.nagai-stage) {
+  background: #e4f2ec;
+}

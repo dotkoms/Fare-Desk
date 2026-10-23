@@ -7,6 +7,10 @@ import { formatDuration } from '../lib/format'
 
 // three.js is heavy; keep it out of the shell bundle and load it alongside the stage
 const GlobeStage = lazy(() => import('./GlobeStage'))
+// Spike: the flat-shaded MapLibre globe; ?map=globe brings back the three.js globe for comparison.
+const MapLibreStage = lazy(() => import('./MapLibreStage'))
+const useLegacyGlobe = new URLSearchParams(window.location.search).get('map') === 'globe'
+const MapStage = useLegacyGlobe ? GlobeStage : MapLibreStage
 
 type Props = {
   itinerary: Itinerary | null
@@ -56,7 +60,7 @@ export default function Stage({
       <div className="stage-map">
         <GlobeBoundary>
           <Suspense fallback={<div className="globe-wrap globe-loading" aria-hidden="true" />}>
-            <GlobeStage
+            <MapStage
               itineraries={itineraries}
               selectedId={selectedId}
               onSelect={onSelect}
