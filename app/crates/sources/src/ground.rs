@@ -21,6 +21,7 @@ impl GroundClient {
     pub fn new() -> Self {
         Self {
             client: reqwest::Client::builder()
+                .user_agent("FareDesk/0.1 (+https://github.com/dotkoms/Fare-Desk)")
                 .timeout(std::time::Duration::from_secs(15))
                 .build()
                 .unwrap_or_default(),
