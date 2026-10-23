@@ -8,7 +8,7 @@ pub mod registry;
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
-use faredesk_core::{DataCard, FxRate, Holiday, Provider, SearchSnapshot};
+use faredesk_core::{DataCard, ExploreCache, FxRate, Holiday, Provider, SearchSnapshot};
 
 pub use cache::{Cached, TimedCache};
 pub use db::{Db, DbError, QuotaOutcome};
@@ -37,6 +37,7 @@ pub struct Store {
     pub search_cache: TimedCache<SearchSnapshot>,
     pub fx_cache: TimedCache<FxRate>,
     pub holidays_cache: TimedCache<Vec<Holiday>>,
+    pub explore_cache: TimedCache<ExploreCache>,
     cards: Vec<DataCard>,
 }
 
@@ -52,6 +53,7 @@ impl Store {
             search_cache: TimedCache::new(CACHE_CAPACITY),
             fx_cache: TimedCache::new(CACHE_CAPACITY),
             holidays_cache: TimedCache::new(CACHE_CAPACITY),
+            explore_cache: TimedCache::new(CACHE_CAPACITY),
             cards,
         })
     }
@@ -67,6 +69,7 @@ impl Store {
             search_cache: TimedCache::new(CACHE_CAPACITY),
             fx_cache: TimedCache::new(CACHE_CAPACITY),
             holidays_cache: TimedCache::new(CACHE_CAPACITY),
+            explore_cache: TimedCache::new(CACHE_CAPACITY),
             cards,
         })
     }
@@ -80,13 +83,17 @@ impl Store {
     }
 
     pub fn cache_len(&self) -> usize {
-        self.search_cache.len() + self.fx_cache.len() + self.holidays_cache.len()
+        self.search_cache.len()
+            + self.fx_cache.len()
+            + self.holidays_cache.len()
+            + self.explore_cache.len()
     }
 
     pub fn sweep_cache(&self) {
         self.search_cache.sweep();
         self.fx_cache.sweep();
         self.holidays_cache.sweep();
+        self.explore_cache.sweep();
     }
 
     pub fn now(&self) -> DateTime<Utc> {

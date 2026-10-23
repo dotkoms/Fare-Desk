@@ -649,3 +649,153 @@ async fn price_check_validates_the_profile() {
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"]["code"], "invalid_profile");
 }
+
+#[tokio::test]
+async fn seasonality_returns_monthly_medians_and_omits_thin_months() {
+    let state = state();
+    // Six March observations across six travel dates, four April ones.
+    for offset in 0..6 {
+        let travel = NaiveDate::from_ymd_opt(2027, 3, 1).unwrap() + ChronoDuration::days(offset);
+        let observed = NaiveDate::from_ymd_opt(2026, 10, 1).unwrap() + ChronoDuration::days(offset);
+        state
+            .store()
+            .db
+            .record_daily_minimum(
+                "BER-LIS",
+                travel,
+                observed,
+                100.0 + offset as f64,
+                "EUR",
+                "serpapi",
+                "TP-1",
+            )
+            .unwrap();
+    }
+    for offset in 0..4 {
+        let travel = NaiveDate::from_ymd_opt(2027, 4, 1).unwrap() + ChronoDuration::days(offset);
+        let observed =
+            NaiveDate::from_ymd_opt(2026, 10, 10).unwrap() + ChronoDuration::days(offset);
+        state
+            .store()
+            .db
+            .record_daily_minimum(
+                "BER-LIS",
+                travel,
+                observed,
+                200.0 + offset as f64,
+                "EUR",
+                "serpapi",
+                "TP-1",
+            )
+            .unwrap();
+    }
+
+    let (status, body) = call(app(state), "GET", "/api/seasonality?from=BER&to=LIS", None).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["route"], "BER-LIS");
+    let points = body["points"].as_array().unwrap();
+    assert_eq!(points.len(), 1);
+    assert_eq!(points[0]["month"], "2027-03");
+    assert_eq!(points[0]["sample"], 6);
+    assert_eq!(points[0]["median"], 103.0);
+    assert_eq!(body["sampleSize"], 10);
+    assert_eq!(body["provenance"]["dataCardId"], "fare-history");
+}
+
+#[tokio::test]
+async fn fare_weather_reports_volatility_from_daily_minima() {
+    let state = state();
+    let travel = NaiveDate::from_ymd_opt(2027, 3, 1).unwrap();
+    for offset in 0..6 {
+        let observed = NaiveDate::from_ymd_opt(2026, 10, 1).unwrap() + ChronoDuration::days(offset);
+        state
+            .store()
+            .db
+            .record_daily_minimum(
+                "BER-LIS",
+                travel,
+                observed,
+                100.0 + offset as f64,
+                "EUR",
+                "serpapi",
+                "TP-1",
+            )
+            .unwrap();
+    }
+
+    let (status, body) = call(
+        app(state),
+        "GET",
+        "/api/fare-weather?from=BER&to=LIS&date=2027-03-01",
+        None,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    let weather = &body["weather"];
+    assert_eq!(weather["route"], "BER-LIS");
+    assert_eq!(weather["classification"], "stable");
+    assert_eq!(weather["sampleSize"], 6);
+    assert_eq!(weather["range7"]["low"], 100.0);
+    assert_eq!(weather["range7"]["high"], 105.0);
+    assert!(weather["cv"].as_f64().unwrap() < 0.12);
+}
+
+#[tokio::test]
+async fn fare_weather_is_insufficient_without_history() {
+    let (status, body) = call(
+        app(state()),
+        "GET",
+        "/api/fare-weather?from=BER&to=LIS&date=2027-03-01",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["weather"]["classification"], "insufficient");
+    assert_eq!(body["weather"]["sampleSize"], 0);
+    assert!(body["weather"]["range7"].is_null());
+}
+
+#[tokio::test]
+async fn explore_returns_a_sorted_validated_feed() {
+    let (status, body) = call(
+        app(state()),
+        "GET",
+        "/api/explore?home=BER&month=2027-03",
+        None,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["home"]["code"], "BER");
+    assert_eq!(body["month"], "2027-03");
+    let rows = body["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 4);
+    assert_eq!(rows[0]["destination"]["code"], "BCN");
+    assert_eq!(rows[0]["totalPrice"], 69.0);
+    assert_eq!(rows[0]["travelDate"], "2027-03-15");
+    assert_eq!(rows[3]["destination"]["code"], "JFK");
+    assert_eq!(body["coverage"]["priced"], 4);
+    assert_eq!(body["coverage"]["attempted"], 4);
+    assert_eq!(body["provenance"]["dataCardId"], "explore-feed");
+    assert_eq!(body["provenance"]["freshness"], "fixture");
+    assert!(body["provenance"]["notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|note| note.as_str().unwrap().contains("demo route graph")));
+}
+
+#[tokio::test]
+async fn explore_rejects_a_bad_month() {
+    let (status, body) = call(
+        app(state()),
+        "GET",
+        "/api/explore?home=BER&month=March",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"]["code"], "invalid_month");
+}

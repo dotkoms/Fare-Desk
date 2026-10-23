@@ -48,6 +48,9 @@ curl -s -X POST "http://127.0.0.1:8080/api/search" \
 | `GET` | `/api/places?q=&limit=` | Airports ranked by IATA code, city, name, then country |
 | `GET` | `/api/routes?origin=&limit=` | Destinations covered from an airport, with coverage state |
 | `GET` | `/api/route-intel?from=&to=&date=` | Daily minima, p10/p50/p90, current percentile, sample and observation window |
+| `GET` | `/api/seasonality?from=&to=` | Median, p10 and p90 per travel month |
+| `GET` | `/api/fare-weather?from=&to=&date=` | Volatility: coefficient of variation, last-seven range, drop frequency, classification |
+| `GET` | `/api/explore?home=&month=` | Cheapest destinations from a home airport for a month, with coverage |
 | `POST` | `/api/search` | Priced, deduplicated, ranked itineraries with provenance |
 | `POST` | `/api/price-check` | Storefront screen: eligibility, net totals with FX, status labels and a recommendation |
 | `GET` | `/api/reference/fx?base=&quote=` | Latest ECB reference rate, cached 24 h, bundled fallback |
@@ -156,6 +159,13 @@ Daily cron, 06:07:
 
 `GET /api/route-intel` reads that history and runs the buy/wait engine: below p10 books now; p10–p50 watches; above the median with more than 45 days to go waits; inside 14 days never promises a late drop; under 14 observations says `insufficient`. It returns the expected 7- and 21-day ranges from observed moves, the downside chance, the lead-time curve, a backtest at 60/30/14 days out when enough completed history exists, plain-language reasons and one line on what would change the call. The track record stays null until the engine has made calls it can score. Every response carries the `fare-history` data card, sample size and observation window.
 
+## Explore, seasonality and fare weather
+
+- **`GET /api/seasonality`** returns the median, p10 and p90 per travel month from the collected daily minima. A month with fewer than five observations is omitted rather than presented as a seasonal fact.
+- **`GET /api/fare-weather`** returns the coefficient of variation, the last-seven-observation range, the share of day-to-day moves that fell by 5% or more, and a classification: `stable`, `erratic`, `rising` (up 2% inside 45 days) or `insufficient` under five observations.
+- **`GET /api/explore`** prices each destination from the home airport on the 15th of the month, one search per destination, one adult and carry-on only. Rows are sorted by total and capped at twelve; `coverage` shows priced vs attempted. The feed is cached for six hours. A price percentile appears when that route has five or more observations. Destinations come from the demo route graph; a schedule feed is required for wider coverage.
+- **Climate overlay is not built yet.** It needs Open-Meteo normals and a comfort score; Explore currently answers “cheap”, not “cheap and dry”.
+
 ## Point of sale
 
 `POST /api/price-check` screens a shortlisted itinerary in up to five markets: departure country, destination country, US, GB and IE, deduplicated. Each market is one source search, so the endpoint is metered.
@@ -236,7 +246,7 @@ CI runs `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, the fu
 
 ```bash
 cd app
-cargo test          # 98 tests
+cargo test          # 108 tests
 cargo clippy --all-targets
 ```
 

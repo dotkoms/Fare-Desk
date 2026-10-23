@@ -19,6 +19,10 @@ use faredesk_core::{
     ProvidersResponse, Recommendation, RouteIntel, RouteIntelResponse, RouteSummary,
     RoutesResponse, SearchQuery, SearchResponse, SearchSnapshot, Sort, MIN_OBSERVATIONS,
 };
+use faredesk_core::{
+    fare_weather, seasonality, ExploreCache, ExploreCoverage, ExploreResponse, ExploreRow,
+    FareWeatherResponse, SeasonalityResponse,
+};
 use faredesk_sources::{fixtures, ResolvedQuery, SourceError};
 use faredesk_store::{Cached, QuotaOutcome};
 
@@ -803,6 +807,331 @@ fn notes_for(
         );
     }
     notes
+}
+
+// ---------------------------------------------------------------------------
+// Seasonality, fare weather and Explore
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct SeasonalityParams {
+    pub from: Option<String>,
+    pub to: Option<String>,
+}
+
+pub async fn seasonality_feed(
+    State(state): State<AppState>,
+    Query(params): Query<SeasonalityParams>,
+) -> Result<Json<SeasonalityResponse>, ApiError> {
+    let (route, observations) = route_observations_for(&state, &params.from, &params.to)?;
+    let points = seasonality(&observations);
+    let included: usize = points.iter().map(|point| point.sample).sum();
+
+    let mut provenance = base_provenance("fare-history", "fare-history", included);
+    provenance.notes.push(
+        "Median, p10 and p90 per travel month; months with fewer than five observations are omitted."
+            .to_string(),
+    );
+    if points.is_empty() {
+        provenance
+            .notes
+            .push("Not enough history yet to show a seasonal curve.".to_string());
+    }
+
+    Ok(Json(SeasonalityResponse {
+        route,
+        points,
+        sample_size: observations.len(),
+        provenance,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct FareWeatherParams {
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub date: Option<NaiveDate>,
+}
+
+pub async fn fare_weather_feed(
+    State(state): State<AppState>,
+    Query(params): Query<FareWeatherParams>,
+) -> Result<Json<FareWeatherResponse>, ApiError> {
+    let date = params.date.ok_or_else(|| {
+        ApiError::bad_request(
+            "missing_date",
+            "Give the travel date, e.g. /api/fare-weather?from=BER&to=LIS&date=2027-03-01.",
+        )
+    })?;
+    let (route, observations) = route_observations_for(&state, &params.from, &params.to)?;
+    let mut weather = fare_weather(&observations, date, now().date_naive());
+    weather.route = route;
+
+    let mut provenance = base_provenance("fare-history", "fare-history", weather.sample_size);
+    provenance.notes.push(if weather.sample_size < 5 {
+        format!(
+            "Collecting baseline — {} of 5 daily minima for this travel date.",
+            weather.sample_size
+        )
+    } else {
+        format!(
+            "Volatility from {} daily minima; the range covers the last seven observations.",
+            weather.sample_size
+        )
+    });
+
+    Ok(Json(FareWeatherResponse {
+        weather,
+        provenance,
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ExploreParams {
+    pub home: Option<String>,
+    pub month: Option<String>,
+}
+
+pub async fn explore(
+    State(state): State<AppState>,
+    Query(params): Query<ExploreParams>,
+) -> Result<Json<ExploreResponse>, ApiError> {
+    let home_value = params.home.unwrap_or_default();
+    if home_value.trim().is_empty() {
+        return Err(ApiError::bad_request(
+            "missing_home",
+            "Give a home airport, e.g. /api/explore?home=BER&month=2027-03.",
+        ));
+    }
+    let month = params.month.unwrap_or_default().trim().to_string();
+    let month_start =
+        NaiveDate::parse_from_str(&format!("{month}-01"), "%Y-%m-%d").map_err(|_| {
+            ApiError::bad_request("invalid_month", "month must be YYYY-MM, e.g. 2027-03.")
+        })?;
+    let travel_date = month_start + Duration::days(14);
+    if travel_date < now().date_naive() {
+        return Err(ApiError::bad_request(
+            "month_in_past",
+            "Explore only searches future dates; the 15th of that month has passed.",
+        ));
+    }
+
+    let home = resolve_place(&state, &home_value)?;
+    let source = state.source(None)?;
+    let key = format!("explore:{}:{}:{}", home.code, month, source.id());
+
+    if let Some(cached) = state.store().explore_cache.get(&key) {
+        let mut provenance = base_provenance("explore-feed", source.id(), cached.value.rows.len());
+        provenance.freshness = Freshness::Cached;
+        provenance.observed_at = cached.value.generated_at;
+        provenance.age_seconds = (now() - cached.value.generated_at).num_seconds().max(0) as u64;
+        provenance.expires_at = Some(cached.expires_at);
+        provenance
+            .notes
+            .push("Cached Explore feed (six-hour window).".to_string());
+        return Ok(Json(ExploreResponse {
+            home,
+            month,
+            rows: cached.value.rows,
+            coverage: cached.value.coverage,
+            provenance,
+        }));
+    }
+
+    let mut destinations: Vec<Place> = fixtures::known_routes()
+        .into_iter()
+        .filter(|(origin, _)| origin.eq_ignore_ascii_case(&home.code))
+        .filter_map(|(_, destination)| state.store().reference.by_code(destination).cloned())
+        .collect();
+    destinations.sort_by(|a, b| a.code.cmp(&b.code));
+    destinations.dedup_by(|a, b| a.code == b.code);
+    destinations.truncate(12);
+
+    let currency = currency_for_country(&home.country).to_string();
+    let live = source.is_live();
+    let mut rows: Vec<ExploreRow> = Vec::new();
+    let mut notes: Vec<String> = Vec::new();
+    let mut attempted = 0;
+    let mut quota_exhausted = false;
+
+    for destination in &destinations {
+        if live {
+            match state.store().db.consume_quota(
+                source.id(),
+                now().date_naive(),
+                state.config().serpapi_daily_limit,
+            ) {
+                Ok(QuotaOutcome::Granted { .. }) => {}
+                Ok(QuotaOutcome::Exhausted { .. }) => {
+                    quota_exhausted = true;
+                    notes.push(
+                        "The daily source quota was spent before the feed was complete."
+                            .to_string(),
+                    );
+                    break;
+                }
+                Err(error) => return Err(ApiError::internal(format!("quota ledger: {error}"))),
+            }
+        }
+        attempted += 1;
+
+        let query = SearchQuery {
+            origin: home.code.clone(),
+            destination: destination.code.clone(),
+            depart_date: travel_date,
+            adults: 1,
+            checked_bags: 0,
+            carry_on_bags: 1,
+            currency: currency.clone(),
+            ..SearchQuery::default()
+        };
+        let resolved = ResolvedQuery {
+            request: &query,
+            origin: &home,
+            destination,
+        };
+
+        let (total_price, percentile) = match source.search(&resolved).await {
+            Ok(offers) => {
+                let best = offers
+                    .iter()
+                    .map(|offer| price_offer(offer, &query).0)
+                    .min_by(f64::total_cmp);
+                match best {
+                    Some(total) => {
+                        let route = format!("{}-{}", home.code, destination.code);
+                        let history = state
+                            .store()
+                            .db
+                            .daily_minima(&route, travel_date)
+                            .unwrap_or_default();
+                        let percentile = if history.len() >= 5 {
+                            let mut prices: Vec<f64> =
+                                history.iter().map(|(_, price)| *price).collect();
+                            prices.sort_by(f64::total_cmp);
+                            percentile_rank(&prices, total)
+                                .map(|value| (value * 10.0).round() / 10.0)
+                        } else {
+                            None
+                        };
+                        (Some((total * 100.0).round() / 100.0), percentile)
+                    }
+                    None => (None, None),
+                }
+            }
+            Err(error) => {
+                notes.push(format!("{}: {error}", destination.code));
+                (None, None)
+            }
+        };
+
+        rows.push(ExploreRow {
+            destination: destination.clone(),
+            travel_date,
+            total_price,
+            currency: currency.clone(),
+            percentile,
+            coverage: match (&total_price, live) {
+                (None, _) => Coverage::None,
+                (Some(_), true) => Coverage::Live,
+                (Some(_), false) => Coverage::Fixture,
+            },
+            last_checked: Some(now()),
+        });
+    }
+
+    rows.sort_by(|a, b| match (a.total_price, b.total_price) {
+        (Some(left), Some(right)) => left.total_cmp(&right),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => a.destination.code.cmp(&b.destination.code),
+    });
+    rows.truncate(12);
+
+    let priced = rows.iter().filter(|row| row.total_price.is_some()).count();
+    let coverage = ExploreCoverage { priced, attempted };
+    let generated_at = now();
+    state.store().explore_cache.insert(
+        key,
+        ExploreCache {
+            rows: rows.clone(),
+            coverage,
+            generated_at,
+        },
+        std::time::Duration::from_secs(6 * 60 * 60),
+    );
+
+    let mut provenance = base_provenance("explore-feed", source.id(), rows.len());
+    provenance.freshness = if live {
+        Freshness::Live
+    } else {
+        Freshness::Fixture
+    };
+    provenance.observed_at = generated_at;
+    provenance.notes.push(
+        "Destinations come from the demo route graph; a schedule feed is required for wider coverage."
+            .to_string(),
+    );
+    provenance
+        .notes
+        .push("Sampled on the 15th of the month, one adult, carry-on only.".to_string());
+    if destinations.is_empty() {
+        provenance
+            .notes
+            .push(format!("No route graph for {} yet.", home.code));
+    }
+    if quota_exhausted {
+        provenance.degraded = true;
+        provenance.degraded_reason =
+            Some("The daily source quota was spent before the feed was complete.".to_string());
+    }
+    provenance.notes.extend(notes);
+
+    Ok(Json(ExploreResponse {
+        home,
+        month,
+        rows,
+        coverage,
+        provenance,
+    }))
+}
+
+/// Resolve a from/to pair and load every observation for the route.
+fn route_observations_for(
+    state: &AppState,
+    from: &Option<String>,
+    to: &Option<String>,
+) -> Result<(String, Vec<Observation>), ApiError> {
+    let from = from.as_deref().unwrap_or_default();
+    let to = to.as_deref().unwrap_or_default();
+    if from.trim().is_empty() || to.trim().is_empty() {
+        return Err(ApiError::bad_request(
+            "missing_route",
+            "Give from and to, e.g. ?from=BER&to=LIS.",
+        ));
+    }
+    let origin = resolve_place(state, from)?;
+    let destination = resolve_place(state, to)?;
+    if origin.code == destination.code {
+        return Err(ApiError::bad_request(
+            "same_place",
+            "Origin and destination are the same airport.",
+        ));
+    }
+    let route = format!("{}-{}", origin.code, destination.code);
+    let observations = state
+        .store()
+        .db
+        .route_observations(&route)
+        .map_err(|error| ApiError::internal(format!("fare history: {error}")))?
+        .into_iter()
+        .map(|(travel_date, observed_on, price)| Observation {
+            travel_date,
+            observed_on,
+            price,
+        })
+        .collect();
+    Ok((route, observations))
 }
 
 // ---------------------------------------------------------------------------

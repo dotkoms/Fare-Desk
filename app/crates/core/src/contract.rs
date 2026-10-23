@@ -566,6 +566,7 @@ pub enum Dataset {
     Providers,
     History,
     Pos,
+    Explore,
     Meta,
 }
 
@@ -580,4 +581,96 @@ pub struct DataCard {
     pub method: String,
     pub updated_at: DateTime<Utc>,
     pub notes: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum WeatherClass {
+    Stable,
+    Erratic,
+    Rising,
+    Insufficient,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FareWeather {
+    pub route: String,
+    pub travel_date: NaiveDate,
+    pub classification: WeatherClass,
+    /// Coefficient of variation of the daily minima, 0-1.
+    pub cv: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub range7: Option<Range>,
+    /// Share of observed day-to-day moves that fell by 5% or more, 0-1.
+    pub drop_frequency: f64,
+    pub sample_size: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window: Option<ObservationWindow>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FareWeatherResponse {
+    pub weather: FareWeather,
+    pub provenance: Provenance,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeasonalityPoint {
+    pub month: String,
+    pub median: f64,
+    pub p10: f64,
+    pub p90: f64,
+    pub sample: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SeasonalityResponse {
+    pub route: String,
+    pub points: Vec<SeasonalityPoint>,
+    pub sample_size: usize,
+    pub provenance: Provenance,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExploreRow {
+    pub destination: Place,
+    pub travel_date: NaiveDate,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_price: Option<f64>,
+    pub currency: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub percentile: Option<f64>,
+    pub coverage: Coverage,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_checked: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExploreCoverage {
+    pub priced: usize,
+    pub attempted: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExploreResponse {
+    pub home: Place,
+    pub month: String,
+    pub rows: Vec<ExploreRow>,
+    pub coverage: ExploreCoverage,
+    pub provenance: Provenance,
+}
+
+/// Cached Explore result for the 6-hour feed window.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ExploreCache {
+    pub rows: Vec<ExploreRow>,
+    pub coverage: ExploreCoverage,
+    pub generated_at: DateTime<Utc>,
 }

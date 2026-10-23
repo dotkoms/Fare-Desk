@@ -129,6 +129,18 @@ pub fn data_cards(airports_updated_at: DateTime<Utc>, airports_source: String) -
             ],
         ),
         card(
+            "explore-feed",
+            Dataset::Explore,
+            "SerpAPI + demo route graph",
+            "SerpAPI terms of service / GPL-3.0-or-later",
+            "Cheapest destination per month from the home airport, one search per destination on the 15th of the month. Destinations come from the demo route graph until a schedule feed is added.",
+            release,
+            &[
+                "One adult, carry-on only.",
+                "Months with fewer than five observations are omitted, not guessed.",
+            ],
+        ),
+        card(
             "data-cards-registry",
             Dataset::Meta,
             "First-party registry",
@@ -175,6 +187,7 @@ mod tests {
             Dataset::Providers,
             Dataset::History,
             Dataset::Pos,
+            Dataset::Explore,
             Dataset::Meta,
         ] {
             assert!(
