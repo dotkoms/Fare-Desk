@@ -3,8 +3,7 @@ import DataBadge from './components/DataBadge'
 import Results from './components/Results'
 import SearchPanel from './components/SearchPanel'
 import Stage from './components/Stage'
-import { apiEnabled, localProvenance, searchFlights, type Provenance } from './lib/api'
-import { itinerariesByRoute, routeKey, snapshots } from './data/mock'
+import { ApiRequestError, searchFlights, type Provenance } from './lib/api'
 import type { Itinerary, Query, Sort } from './types'
 
 const initialQuery: Query = {
@@ -58,54 +57,31 @@ export default function App() {
   )
   const [results, setResults] = useState<Itinerary[]>([])
   const [provenance, setProvenance] = useState<Provenance | null>(null)
-  const [loading, setLoading] = useState(apiEnabled)
-  const [error, setError] = useState<string | null>(null)
-  const [notice, setNotice] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<ApiRequestError | Error | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
 
-  const route = routeKey(activeQuery.origin, activeQuery.destination)
-
-  // Without a data plane, the bundled fixtures are the answer and no request
-  // is attempted; that keeps the demo working when the API is not running.
-  const offlineResults = useMemo<Itinerary[]>(
-    () => (apiEnabled ? [] : (itinerariesByRoute[route] ?? [])),
-    [route],
-  )
-  const offlineProvenance = useMemo(
-    () => (apiEnabled ? null : localProvenance(offlineResults.length)),
-    [offlineResults.length],
-  )
-  const visibleResults = apiEnabled ? results : offlineResults
-  const visibleProvenance = apiEnabled ? provenance : offlineProvenance
-  const visibleLoading = apiEnabled && loading
-
-  const sorted = useMemo(() => sortItineraries(visibleResults, sort), [visibleResults, sort])
+  const sorted = useMemo(() => sortItineraries(results, sort), [results, sort])
   const selected = sorted.find((itinerary) => itinerary.id === selectedId) ?? sorted[0] ?? null
-  const snapshot = snapshots[route] ?? null
   const routeLabel = `${activeQuery.origin} → ${activeQuery.destination}`
+  const notice = provenance?.degraded ? (provenance.degradedReason ?? null) : null
 
   useEffect(() => {
-    if (!apiEnabled) return
-
     let cancelled = false
 
     async function load() {
       setError(null)
-      setNotice(null)
       setLoading(true)
-      setResults([])
-      setProvenance(null)
       try {
         const outcome = await searchFlights(activeQuery)
         if (cancelled) return
         setResults(outcome.itineraries)
         setProvenance(outcome.provenance)
-        setNotice(outcome.notice ?? outcome.provenance.degradedReason ?? null)
       } catch (cause) {
         if (cancelled) return
         setResults([])
         setProvenance(null)
-        setError(cause instanceof Error ? cause.message : 'Could not load flights.')
+        setError(cause instanceof Error ? cause : new Error('Could not load flights.'))
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -118,6 +94,19 @@ export default function App() {
     }
   }, [activeQuery, refreshKey])
 
+  // Live fares are one-way in this release; offer the one-way search rather than inventing a return price.
+  const errorAction =
+    error instanceof ApiRequestError && error.code === 'return_trip_not_supported'
+      ? {
+          label: 'Search one way instead',
+          run: () => {
+            const oneWay = { ...activeQuery, tripType: 'oneway' as const }
+            setQuery(oneWay)
+            setActiveQuery(oneWay)
+          },
+        }
+      : { label: 'Try again', run: () => setRefreshKey((key) => key + 1) }
+
   return (
     <div className="app">
       <aside className="console">
@@ -127,7 +116,7 @@ export default function App() {
               Fare<span>Desk</span>
             </div>
           </div>
-          <DataBadge provenance={visibleProvenance} loading={visibleLoading} error={error} />
+          <DataBadge provenance={provenance} loading={loading} error={error?.message ?? null} />
         </header>
 
         <SearchPanel
@@ -153,23 +142,23 @@ export default function App() {
           }}
           sort={sort}
           onSort={setSort}
-          loading={visibleLoading}
-          error={error}
+          loading={loading}
+          error={error?.message ?? null}
+          errorAction={errorAction}
           notice={notice}
-          onRetry={() => setRefreshKey((key) => key + 1)}
         />
       </aside>
 
       <main className="workspace">
         <Stage
           itinerary={selected}
-          snapshot={snapshot}
           tab={tab}
           onTab={setTab}
           routeLabel={routeLabel}
           dateLabel={formatDateRange(activeQuery)}
           passengers={activeQuery.passengers}
-          loading={visibleLoading}
+          loading={loading}
+          travelDate={activeQuery.depart}
           itineraries={sorted}
           selectedId={selected?.id ?? null}
           onSelect={setSelectedId}

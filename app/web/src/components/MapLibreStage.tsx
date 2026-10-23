@@ -11,11 +11,10 @@ import {
 import 'maplibre-gl/dist/maplibre-gl.css'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import type { Feature, FeatureCollection, LineString, Point } from 'geojson'
-import { airportByCode, type GlobeAirport } from '../data/globe'
 import { formatDuration } from '../lib/format'
 import { supportsWebGL } from '../lib/webgl'
 import { NAGAI, PALM, glitter, graticule, greatCircle } from '../map/nagai'
-import type { Itinerary } from '../types'
+import type { Airport, Itinerary } from '../types'
 import GlobeFallback from './GlobeFallback'
 
 setWorkerUrl(workerUrl)
@@ -82,7 +81,11 @@ const style: StyleSpecification = {
       type: 'line',
       source: 'glitter',
       layout: { 'line-cap': 'round' },
-      paint: { 'line-color': '#FFFFFF', 'line-opacity': 0.42, 'line-width': ['interpolate', ['linear'], ['zoom'], 1, 0.8, 4, 1.6] },
+      paint: {
+        'line-color': '#FFFFFF',
+        'line-opacity': 0.42,
+        'line-width': ['interpolate', ['linear'], ['zoom'], 1, 0.8, 4, 1.6],
+      },
     },
     // Pool-water shallows: two flat turquoise bands ringing every coast, widening as you zoom in.
     {
@@ -97,7 +100,10 @@ const style: StyleSpecification = {
       type: 'line',
       source: 'land',
       layout: { 'line-join': 'round' },
-      paint: { 'line-color': NAGAI.shallowLight, 'line-width': ['interpolate', ['linear'], ['zoom'], 1, 1, 3, 2.5, 6, 5] },
+      paint: {
+        'line-color': NAGAI.shallowLight,
+        'line-width': ['interpolate', ['linear'], ['zoom'], 1, 1, 3, 2.5, 6, 5],
+      },
     },
     // Hard shadow, never blur: the land again, offset in screen space like a low sun.
     {
@@ -181,10 +187,28 @@ type Puff = readonly [x: number, y: number, r: number]
 
 // Flat white puffs over a hard flat shade; the base sinks behind the globe's edge.
 const CUMULUS_LEFT: Puff[] = [
-  [70, 238, 34], [112, 206, 46], [160, 176, 52], [150, 120, 44], [186, 84, 38], [214, 128, 42],
-  [250, 182, 46], [298, 214, 36], [330, 240, 26], [128, 250, 40], [210, 252, 44], [270, 254, 36],
+  [70, 238, 34],
+  [112, 206, 46],
+  [160, 176, 52],
+  [150, 120, 44],
+  [186, 84, 38],
+  [214, 128, 42],
+  [250, 182, 46],
+  [298, 214, 36],
+  [330, 240, 26],
+  [128, 250, 40],
+  [210, 252, 44],
+  [270, 254, 36],
 ]
-const CUMULUS_RIGHT: Puff[] = [[40, 132, 26], [78, 104, 36], [104, 64, 30], [128, 98, 34], [160, 124, 26], [96, 140, 30], [150, 146, 24]]
+const CUMULUS_RIGHT: Puff[] = [
+  [40, 132, 26],
+  [78, 104, 36],
+  [104, 64, 30],
+  [128, 98, 34],
+  [160, 124, 26],
+  [96, 140, 30],
+  [150, 146, 24],
+]
 
 function Cumulus({
   className,
@@ -272,16 +296,22 @@ export default function MapLibreStage({ itineraries, selectedId, onSelect, origi
   const selected = itineraries.find((itinerary) => itinerary.id === selectedId) ?? itineraries[0] ?? null
 
   // One line per airport sequence: twelve BER–LIS fares are one nonstop route.
-  const { routes, airports } = useMemo(() => {
+  const { routes, airports, places } = useMemo(() => {
+    // Coordinates come with each segment from the data plane; no airport list is bundled.
+    const places = new Map<string, Airport>()
+    for (const itinerary of itineraries) {
+      for (const segment of itinerary.segments) {
+        places.set(segment.from.code, segment.from)
+        places.set(segment.to.code, segment.to)
+      }
+    }
     const byKey = new Map<string, Feature<LineString, RouteProps>>()
     const codes = new Set<string>()
     const selectedKey = selected ? routeKey(selected) : null
 
     for (const itinerary of itineraries) {
       const key = routeKey(itinerary)
-      const stops = key.split('-').map((code) => airportByCode(code))
-      if (stops.some((stop) => !stop)) continue
-      const points = stops as GlobeAirport[]
+      const points = key.split('-').map((code) => places.get(code) as Airport)
       points.forEach((point) => codes.add(point.code))
       const isSelected = key === selectedKey
       const existing = byKey.get(key)
@@ -302,8 +332,7 @@ export default function MapLibreStage({ itineraries, selectedId, onSelect, origi
     }
 
     const airportFeatures: Feature<Point, { code: string; endpoint: boolean }>[] = [...codes]
-      .map((code) => airportByCode(code))
-      .filter((airport): airport is GlobeAirport => Boolean(airport))
+      .map((code) => places.get(code) as Airport)
       .map((airport) => ({
         type: 'Feature',
         properties: {
@@ -316,6 +345,7 @@ export default function MapLibreStage({ itineraries, selectedId, onSelect, origi
     return {
       routes: { type: 'FeatureCollection', features: [...byKey.values()] } as FeatureCollection,
       airports: { type: 'FeatureCollection', features: airportFeatures } as FeatureCollection,
+      places,
     }
   }, [itineraries, selected, originCode, destinationCode])
 
@@ -372,7 +402,7 @@ export default function MapLibreStage({ itineraries, selectedId, onSelect, origi
     const markers: Marker[] = []
     for (const item of airports.features) {
       const { code, endpoint } = item.properties as { code: string; endpoint: boolean }
-      const airport = airportByCode(code)
+      const airport = places.get(code)
       if (!airport) continue
       const element = endpoint
         ? labelElement('nagai-label', code, airport.city)
@@ -391,10 +421,12 @@ export default function MapLibreStage({ itineraries, selectedId, onSelect, origi
       const chip = document.createElement('div')
       chip.className = 'nagai-chip'
       chip.textContent = `${selected.segments[0].carrier.split(' ')[0]} · €${selected.total} · ${formatDuration(selected.durationMinutes)}`
-      markers.push(new Marker({ element: chip, anchor: 'left', offset: [10, 0] }).setLngLat(middle as [number, number]).addTo(map))
+      markers.push(
+        new Marker({ element: chip, anchor: 'left', offset: [10, 0] }).setLngLat(middle as [number, number]).addTo(map),
+      )
     }
     markersRef.current = markers
-  }, [ready, routes, airports, selected])
+  }, [ready, routes, airports, places, selected])
 
   // Fit the route between the floating panels, tilted so the horizon and sky stay in view.
   useEffect(() => {
@@ -442,8 +474,20 @@ export default function MapLibreStage({ itineraries, selectedId, onSelect, origi
           <svg className="nagai-sun" width="96" height="96" viewBox="0 0 96 96">
             <circle cx="48" cy="48" r="40" fill={NAGAI.sun} />
           </svg>
-          <Cumulus className="nagai-cumulus nagai-cumulus-left" width={360} height={280} puffs={CUMULUS_LEFT} scale={cloudRoom} />
-          <Cumulus className="nagai-cumulus nagai-cumulus-right" width={190} height={170} puffs={CUMULUS_RIGHT} scale={cloudRoom * 0.8} />
+          <Cumulus
+            className="nagai-cumulus nagai-cumulus-left"
+            width={360}
+            height={280}
+            puffs={CUMULUS_LEFT}
+            scale={cloudRoom}
+          />
+          <Cumulus
+            className="nagai-cumulus nagai-cumulus-right"
+            width={190}
+            height={170}
+            puffs={CUMULUS_RIGHT}
+            scale={cloudRoom * 0.8}
+          />
         </div>
       ) : null}
 
@@ -453,7 +497,13 @@ export default function MapLibreStage({ itineraries, selectedId, onSelect, origi
         {PALM.map((frond, index) => (
           <g key={index}>
             <path d={frond.leaves} fill={frond.back ? NAGAI.palmBack : NAGAI.palm} />
-            <path d={frond.stem} fill="none" stroke={frond.back ? NAGAI.palmBack : NAGAI.palm} strokeWidth="4" strokeLinecap="round" />
+            <path
+              d={frond.stem}
+              fill="none"
+              stroke={frond.back ? NAGAI.palmBack : NAGAI.palm}
+              strokeWidth="4"
+              strokeLinecap="round"
+            />
           </g>
         ))}
       </svg>

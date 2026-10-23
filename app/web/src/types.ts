@@ -3,6 +3,8 @@ export type Airport = {
   city: string
   name: string
   country: string
+  lat: number
+  lng: number
 }
 
 export type Segment = {
@@ -28,27 +30,14 @@ export type Itinerary = {
   refundable: boolean
   changeFee: number
   provider: string
+  /** Where "Open on provider" goes; the purchase happens there, never here. */
+  providerUrl: string
+  /** Layovers shorter than the airport's minimum connection time, in plain words. */
+  connectionWarnings: string[]
   /** Null when the source could not confirm the price (fixtures, demo data). */
   verifiedMinutesAgo: number | null
   risk: Array<'Self-transfer' | 'OTA only' | 'Hidden city'>
   fareFamily: string
-}
-
-export type Recommendation = 'Book now' | 'Wait' | 'Watch' | 'Not enough data'
-
-export type RouteSnapshot = {
-  route: string
-  current: number
-  typicalLow: number
-  typicalHigh: number
-  percentile: number
-  sample: number
-  recommendation: Recommendation
-  trackRecord: { correct: number; cases: number } | null
-  expected7: [number, number]
-  expected21: [number, number]
-  downside: string
-  history: number[]
 }
 
 export type Sort = 'best' | 'cheapest' | 'fastest'

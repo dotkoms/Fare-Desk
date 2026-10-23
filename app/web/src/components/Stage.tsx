@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react'
-import type { Itinerary, RouteSnapshot } from '../types'
+import type { Itinerary } from '../types'
 import GlobeBoundary from './GlobeBoundary'
 import Intel from './Intel'
 import RouteBoard from './RouteBoard'
@@ -14,7 +14,6 @@ const MapStage = useLegacyGlobe ? GlobeStage : MapLibreStage
 
 type Props = {
   itinerary: Itinerary | null
-  snapshot: RouteSnapshot | null
   tab: 'itinerary' | 'intel'
   onTab: (tab: 'itinerary' | 'intel') => void
   routeLabel: string
@@ -26,11 +25,11 @@ type Props = {
   originCode: string
   destinationCode: string
   loading: boolean
+  travelDate: string
 }
 
 export default function Stage({
   itinerary,
-  snapshot,
   tab,
   onTab,
   routeLabel,
@@ -42,6 +41,7 @@ export default function Stage({
   originCode,
   destinationCode,
   loading,
+  travelDate,
 }: Props) {
   if (!itinerary) {
     return (
@@ -49,7 +49,6 @@ export default function Stage({
         <div className="stage-empty-inner">
           <span className="stage-kicker">{loading ? 'Searching' : 'No route selected'}</span>
           <h2>{loading ? 'Finding flights.' : 'Search a route to see the fare desk.'}</h2>
-          {loading ? null : <p>Try BER → LIS, BER → LHR, BER → BCN or BER → JFK.</p>}
         </div>
       </section>
     )
@@ -149,19 +148,37 @@ export default function Stage({
                 <strong>{itinerary.provider}</strong>
                 <span className="provider-note">
                   {itinerary.verifiedMinutesAgo === null
-                    ? 'Demo fare — not verified'
+                    ? 'Price not verified — confirm it on the provider'
                     : `Verified ${itinerary.verifiedMinutesAgo} min ago`}
                 </span>
               </div>
-              <button className="button-primary" type="button" disabled title="Demo only — no booking">
-                Open on {itinerary.provider} (demo)
-              </button>
+              <a
+                className="button-primary button-link"
+                href={itinerary.providerUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Open on {itinerary.provider}
+              </a>
             </div>
 
-            <p className="stage-note">Fare Desk does not book or take payment.</p>
+            {itinerary.connectionWarnings.map((warning) => (
+              <p className="stage-warning" key={warning}>
+                {warning}
+              </p>
+            ))}
+
+            <p className="stage-note">
+              We don’t book or take payment. The final price is confirmed on {itinerary.provider}.
+            </p>
           </div>
         ) : (
-          <Intel snapshot={snapshot} currentPrice={itinerary.total} />
+          <Intel
+            origin={itinerary.segments[0].from.code}
+            destination={itinerary.segments[itinerary.segments.length - 1].to.code}
+            travelDate={travelDate}
+            currentPrice={itinerary.total}
+          />
         )}
       </div>
     </section>

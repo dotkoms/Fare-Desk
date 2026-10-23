@@ -18,7 +18,7 @@ export default function Sparkline({ values }: { values: number[] }) {
   const lastY = height - ((last - min) / range) * (height - 10) - 5
 
   return (
-    <svg className="sparkline" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label="Price history, 90 days">
+    <svg className="sparkline" viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" role="img" aria-label="Daily lowest fare on this route">
       <line x1="0" y1={height - 5} x2={width} y2={height - 5} className="sparkline-base" vectorEffect="non-scaling-stroke" />
       <polyline points={points} className="sparkline-line" vectorEffect="non-scaling-stroke" />
       <circle cx={width} cy={lastY} r="4" className="sparkline-dot" />

@@ -1,33 +1,10 @@
 import type { Query } from '../types'
-import { airports } from '../data/mock'
+import PlaceField from './PlaceField'
 
 type Props = {
   query: Query
   onChange: (patch: Partial<Query>) => void
   onSearch: () => void
-}
-
-function AirportSelect({
-  label,
-  value,
-  onChange,
-}: {
-  label: string
-  value: string
-  onChange: (value: string) => void
-}) {
-  return (
-    <label className="field">
-      <span className="field-label">{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)}>
-        {airports.map((airport) => (
-          <option key={airport.code} value={airport.code}>
-            {airport.code} · {airport.city}
-          </option>
-        ))}
-      </select>
-    </label>
-  )
 }
 
 export default function SearchPanel({ query, onChange, onSearch }: Props) {
@@ -59,7 +36,7 @@ export default function SearchPanel({ query, onChange, onSearch }: Props) {
       </div>
 
       <div className="places">
-        <AirportSelect label="From" value={query.origin} onChange={(origin) => onChange({ origin })} />
+        <PlaceField label="From" code={query.origin} onChange={(origin) => onChange({ origin })} />
         <button
           type="button"
           className="swap"
@@ -68,11 +45,7 @@ export default function SearchPanel({ query, onChange, onSearch }: Props) {
         >
           ⇄
         </button>
-        <AirportSelect
-          label="To"
-          value={query.destination}
-          onChange={(destination) => onChange({ destination })}
-        />
+        <PlaceField label="To" code={query.destination} onChange={(destination) => onChange({ destination })} />
       </div>
 
       <div className="field-row">

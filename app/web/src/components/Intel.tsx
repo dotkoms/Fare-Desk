@@ -1,8 +1,20 @@
-import type { RouteSnapshot } from '../types'
+import { useEffect, useState } from 'react'
+import { getRouteIntel, type RouteIntel, type Verdict } from '../lib/api'
 import Sparkline from './Sparkline'
 
-function clampPercent(value: number) {
-  return Math.max(3, Math.min(97, value))
+type Props = {
+  origin: string
+  destination: string
+  travelDate: string
+  /** The selected flight's total, shown next to the route's own numbers. */
+  currentPrice: number
+}
+
+const VERDICT: Record<Verdict, { label: string; className: string }> = {
+  buy: { label: 'Book now', className: 'recommendation-book-now' },
+  wait: { label: 'Wait', className: 'recommendation-wait' },
+  watch: { label: 'Watch', className: 'recommendation-watch' },
+  insufficient: { label: 'Not enough data', className: 'recommendation-not-enough-data' },
 }
 
 function ordinal(value: number) {
@@ -20,63 +32,98 @@ function ordinal(value: number) {
   }
 }
 
-export default function Intel({
-  snapshot,
-  currentPrice,
-}: {
-  snapshot: RouteSnapshot | null
-  currentPrice: number
-}) {
-  if (!snapshot) {
+const euros = (value: number) => `€${Math.round(value)}`
+
+type Result = { key: string } & ({ status: 'error'; message: string } | { status: 'ready'; intel: RouteIntel })
+
+export default function Intel({ origin, destination, travelDate, currentPrice }: Props) {
+  const key = `${origin}-${destination}-${travelDate}`
+  const [result, setResult] = useState<Result | null>(null)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    getRouteIntel(origin, destination, travelDate, controller.signal)
+      .then(({ intel }) => setResult({ key, status: 'ready', intel }))
+      .catch((cause: unknown) => {
+        if (controller.signal.aborted) return
+        const message = cause instanceof Error ? cause.message : 'Could not load route history.'
+        setResult({ key, status: 'error', message })
+      })
+    return () => controller.abort()
+  }, [key, origin, destination, travelDate])
+
+  // A result for another route is stale: show loading until this route's answer arrives.
+  const state = result?.key === key ? result : null
+
+  if (!state) {
     return (
-      <div className="intel intel-empty">
+      <div className="intel" aria-busy="true">
         <span className="section-kicker">When to buy</span>
-        <h3>Not enough data for this route yet.</h3>
-        <p>
-          We have fewer than 14 daily observations. Current totals are visible, but a buy or wait call would be a
-          guess.
-        </p>
-        <button className="button-secondary" type="button" disabled>
-          Watch this route (demo)
-        </button>
+        <p className="intel-copy">Reading this route’s price history…</p>
       </div>
     )
   }
 
-  const position = clampPercent(
-    ((currentPrice - snapshot.typicalLow) / (snapshot.typicalHigh - snapshot.typicalLow)) * 100,
-  )
-  const recommendation =
-    currentPrice <= snapshot.typicalLow + (snapshot.typicalHigh - snapshot.typicalLow) * 0.3
-      ? 'Book now'
-      : currentPrice <= snapshot.typicalHigh
-        ? 'Watch'
-        : 'Wait'
-  const percentile = Math.round(position)
+  if (state.status === 'error') {
+    return (
+      <div className="intel intel-empty">
+        <span className="section-kicker">When to buy</span>
+        <h3>Route history is unavailable.</h3>
+        <p>{state.message}</p>
+      </div>
+    )
+  }
+
+  const { intel } = state
+  const verdict = intel.recommendation ?? 'insufficient'
+  const enough = verdict !== 'insufficient' && intel.p10 !== null && intel.p90 !== null && intel.currentPrice !== null
+
+  if (!enough) {
+    return (
+      <div className="intel intel-empty">
+        <div className="intel-head">
+          <span className="section-kicker">When to buy</span>
+          <span className={`recommendation ${VERDICT.insufficient.className}`}>{VERDICT.insufficient.label}</span>
+        </div>
+        <h3>There is not enough data for this route yet.</h3>
+        <p>
+          Collecting baseline — {intel.sampleSize} of {intel.minObservations} daily observations. A buy or wait call
+          before then would be a guess.
+        </p>
+        {intel.history.length > 1 ? <Sparkline values={intel.history.map((point) => point.price)} /> : null}
+      </div>
+    )
+  }
+
+  const p10 = intel.p10 as number
+  const p90 = intel.p90 as number
+  const today = intel.currentPrice as number
+  // The band sits at 12–88% of the track; place today's fare on the same scale.
+  const position = Math.max(3, Math.min(97, 12 + ((today - p10) / (p90 - p10 || 1)) * 76))
+  const { label, className } = VERDICT[verdict]
 
   return (
     <div className="intel">
       <div className="intel-head">
         <div>
-          <span className="section-kicker">Current total</span>
+          <span className="section-kicker">Lowest fare on this route today</span>
           <div className="intel-price">
-            €{currentPrice}
-            <span>/ person</span>
+            {euros(today)}
+            <span>/ adult</span>
           </div>
           <div className="intel-sub">
-            {ordinal(percentile)} percentile · {snapshot.sample} observations
+            {intel.percentile !== null ? `${ordinal(Math.round(intel.percentile))} percentile · ` : ''}
+            {intel.sampleSize} days observed · this flight {euros(currentPrice)}
           </div>
         </div>
-        <span className={`recommendation recommendation-${recommendation.toLowerCase().replaceAll(' ', '-')}`}>
-          {recommendation}
-        </span>
+        <span className={`recommendation ${className}`}>{label}</span>
       </div>
 
       <div className="range-block">
         <div className="range-labels">
-          <span>€{snapshot.typicalLow}</span>
-          <span>Typical range</span>
-          <span>€{snapshot.typicalHigh}</span>
+          <span>{euros(p10)}</span>
+          <span>Middle 80% of fares</span>
+          <span>{euros(p90)}</span>
         </div>
         <div className="range-track">
           <div className="range-band" />
@@ -84,39 +131,36 @@ export default function Intel({
         </div>
       </div>
 
-      <Sparkline values={snapshot.history} />
+      <Sparkline values={intel.history.map((point) => point.price)} />
 
       <div className="intel-evidence">
         <div>
-          <span className="section-kicker">7 days</span>
-          <strong>
-            €{snapshot.expected7[0]}–€{snapshot.expected7[1]}
-          </strong>
+          <span className="section-kicker">In 7 days</span>
+          <strong>{intel.expected7 ? `${euros(intel.expected7.low)}–${euros(intel.expected7.high)}` : '—'}</strong>
         </div>
         <div>
-          <span className="section-kicker">21 days</span>
-          <strong>
-            €{snapshot.expected21[0]}–€{snapshot.expected21[1]}
-          </strong>
+          <span className="section-kicker">In 21 days</span>
+          <strong>{intel.expected21 ? `${euros(intel.expected21.low)}–${euros(intel.expected21.high)}` : '—'}</strong>
         </div>
         <div>
           <span className="section-kicker">Track record</span>
           <strong>
-            {snapshot.trackRecord ? `${snapshot.trackRecord.correct} of ${snapshot.trackRecord.cases}` : '—'}
+            {intel.trackRecord ? `${intel.trackRecord.correct} of ${intel.trackRecord.cases}` : 'None yet'}
           </strong>
         </div>
       </div>
 
-      <p className="intel-copy">
-        {recommendation === 'Book now'
-          ? 'Below the typical range, and this route usually rises inside three weeks.'
-          : recommendation === 'Wait'
-            ? 'Above the typical range. Waiting is reasonable, but set a floor.'
-            : 'Inside the typical range. Waiting and booking are both reasonable.'}
-      </p>
-      <p className="intel-downside">{snapshot.downside}.</p>
-
-      <p className="demo-note">Demo recommendation, not live advice.</p>
+      {intel.reasons?.map((reason) => (
+        <p className="intel-copy" key={reason}>
+          {reason}
+        </p>
+      ))}
+      {intel.downside !== undefined ? (
+        <p className="intel-downside">
+          {Math.round(intel.downside)}% of past weeks would have taken this fare below {euros(p10)}.
+        </p>
+      ) : null}
+      {intel.changeMyMind ? <p className="intel-downside">{intel.changeMyMind}</p> : null}
     </div>
   )
 }

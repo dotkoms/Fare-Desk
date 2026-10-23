@@ -11,7 +11,7 @@ type Props = {
   loading: boolean
   error: string | null
   notice: string | null
-  onRetry: () => void
+  errorAction: { label: string; run: () => void }
 }
 
 function stopLabel(stops: number) {
@@ -73,7 +73,7 @@ function ResultCard({
 
         <div className="result-tags">
           {itinerary.verifiedMinutesAgo === null ? (
-            <span className="tag-demo">Demo fare</span>
+            <span className="tag-demo">Not verified</span>
           ) : (
             <span className="tag-verified">Verified {itinerary.verifiedMinutesAgo} min ago</span>
           )}
@@ -102,7 +102,7 @@ export default function Results({
   loading,
   error,
   notice,
-  onRetry,
+  errorAction,
 }: Props) {
   return (
     <section className="results" aria-label="Flight results" aria-busy={loading}>
@@ -143,14 +143,14 @@ export default function Results({
           <div className="empty-state">
             <h3>Could not load flights.</h3>
             <p>{error}</p>
-            <button className="button-secondary" type="button" onClick={onRetry}>
-              Try again
+            <button className="button-secondary" type="button" onClick={errorAction.run}>
+              {errorAction.label}
             </button>
           </div>
         ) : itineraries.length === 0 ? (
           <div className="empty-state">
-            <h3>No flights found for this pair.</h3>
-            <p>Try BER → LIS, BER → LHR, BER → BCN or BER → JFK.</p>
+            <h3>No flights found for these dates.</h3>
+            <p>Try nearby dates, or another airport in the same city.</p>
           </div>
         ) : (
           itineraries.map((itinerary) => (

@@ -1540,3 +1540,84 @@ button:disabled {
     margin-left: 404px;
   }
 }
+
+/* Airport combobox */
+.place-field {
+  position: relative;
+}
+
+.place-options {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  width: max(100%, 300px);
+  max-height: 320px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--ink);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 4px 4px 0 rgba(18, 50, 75, 0.85);
+}
+
+.place-options li {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  column-gap: 8px;
+  padding: 7px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.place-options li.is-active {
+  background: var(--surface-2);
+}
+
+.place-options strong {
+  grid-row: span 2;
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.place-options span {
+  font-size: 13px;
+}
+
+.place-options small {
+  overflow: hidden;
+  color: var(--ink-3);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 18px;
+  text-decoration: none;
+}
+
+.stage-warning {
+  margin: 0;
+  padding: 8px 10px;
+  border-left: 2px solid var(--status-warn);
+  background: color-mix(in srgb, var(--status-warn) 8%, transparent);
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.intel-empty h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.intel-empty p {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 12.5px;
+}
