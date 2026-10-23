@@ -28,6 +28,7 @@ A field manual for paying less for planes, trains and coaches — the data sourc
 | Add gamification without dark patterns | [docs/19-gamification.md](docs/19-gamification.md) |
 | Understand users and competitors | [docs/20-users-and-competitors.md](docs/20-users-and-competitors.md) |
 | Build the globe with react-globe.gl | [docs/21-globe-implementation.md](docs/21-globe-implementation.md) |
+| Replace it with a 2D poster map (Nagai direction) | [docs/23-2d-poster-map.md](docs/23-2d-poster-map.md) |
 | Plan the build step by step | [docs/22-build-planner.md](docs/22-build-planner.md) |
 | Decide what is an API and what needs a browser | [docs/12-rust-data-layer.md](docs/12-rust-data-layer.md) |
 | Check whether another storefront is cheaper | [docs/13-point-of-sale.md](docs/13-point-of-sale.md) |
@@ -65,7 +66,8 @@ fleet/
 │  ├─ 19-gamification.md           Ethical mechanics and metrics
 │  ├─ 20-users-and-competitors.md  Beachhead, personas, competitive gap
 │  ├─ 21-globe-implementation.md   react-globe.gl props, data and budgets
-│  └─ 22-build-planner.md          Effort, gates, docs and agents per step
+│  ├─ 22-build-planner.md          Effort, gates, docs and agents per step
+│  └─ 23-2d-poster-map.md          Plan: 2D SVG map, poster palette, migration
 └─ agents/
    ├─ README.md                    How to install the fleet
    ├─ desk-ops.md

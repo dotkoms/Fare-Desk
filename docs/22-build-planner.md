@@ -77,6 +77,8 @@ A step-by-step build order with effort, gates and the exact docs and agents to c
 
 ### Step 2 — Globe v0 + sync (10–15 days)
 
+> If the 2D poster map in [23-2d-poster-map.md](23-2d-poster-map.md) is approved, this step becomes its Step B–E and the globe references below are superseded by that document.
+
 **Build:** `react-globe.gl`, Natural Earth land polygons, top 100 airports, direct arcs, one-stop paths, HTML labels, camera fit with a safe rect, poster fallback, hover preview, click selection, `ensureVisible`, keyboard focus and `aria-live`.
 
 **Read first:**

@@ -1,5 +1,7 @@
 # Globe implementation with react-globe.gl
 
+> **Current implementation.** A proposal to replace this surface with a flat, poster-styled 2D map (Hiroshi Nagai direction) is in [23-2d-poster-map.md](23-2d-poster-map.md). This document remains the reference until that decision is made and the replacement ships.
+
 `react-globe.gl` is the v1 choice for the globe: it gives us airports, great-circle arcs, multi-leg paths, picking, and camera control without building a Three.js scene from scratch. This document maps the design decisions in [16-ui-ux.md](16-ui-ux.md), [17-design-system.md](17-design-system.md) and [18-color.md](18-color.md) to concrete props and data shapes.
 
 **Scope:** the globe is the lobby and the Explore surface. The route decision uses a flat route board, not the globe. See [17-design-system.md](17-design-system.md#globe-vs-flat).
