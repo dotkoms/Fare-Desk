@@ -48,8 +48,9 @@ impl SerpApiSource {
         }
     }
 
-    #[cfg(test)]
-    fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+    /// Point the adapter at a different endpoint. Used by tests, local mocks
+    /// and self-hosted proxies; production uses the SerpAPI default.
+    pub fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
         self.base_url = base_url.into();
         self
     }
@@ -491,6 +492,74 @@ mod tests {
             .block_on(source.search(&query(&request, &berlin, &lisbon)))
             .unwrap_err();
         assert!(error.to_string().contains("one direction"));
+    }
+
+    #[tokio::test]
+    async fn adapter_calls_the_http_endpoint_with_the_contract_params() {
+        use std::collections::HashMap;
+        use std::sync::{Arc, Mutex};
+
+        use axum::extract::Query;
+        use axum::response::Json;
+        use axum::routing::get;
+        use axum::Router;
+
+        let captured: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::new()));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+
+        let handler = {
+            let captured = captured.clone();
+            move |Query(params): Query<HashMap<String, String>>| {
+                let captured = captured.clone();
+                async move {
+                    captured.lock().unwrap().extend(params);
+                    Json(serde_json::from_str::<serde_json::Value>(RESPONSE).unwrap())
+                }
+            }
+        };
+        let app = Router::new().route("/search.json", get(handler));
+        tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        let (berlin, lisbon) = places();
+        let request = SearchQuery {
+            origin: "BER".into(),
+            destination: "LIS".into(),
+            depart_date: NaiveDate::from_ymd_opt(2027, 3, 1).unwrap(),
+            adults: 2,
+            checked_bags: 1,
+            ..Default::default()
+        };
+        let source = SerpApiSource::new(
+            reqwest::Client::new(),
+            "test-key",
+            faredesk_store::load_providers().unwrap(),
+            place_map(),
+        )
+        .with_base_url(format!("http://{address}/search.json"));
+
+        let offers = source
+            .search(&query(&request, &berlin, &lisbon))
+            .await
+            .unwrap();
+        assert_eq!(offers.len(), 3);
+        assert!(offers.iter().all(|offer| offer.verified_at.is_some()));
+        assert!(offers
+            .iter()
+            .all(|offer| offer.provider_url.contains("BER")));
+
+        let params = captured.lock().unwrap().clone();
+        assert_eq!(params["engine"], "google_flights");
+        assert_eq!(params["departure_id"], "BER");
+        assert_eq!(params["arrival_id"], "LIS");
+        assert_eq!(params["outbound_date"], "2027-03-01");
+        assert_eq!(params["type"], "2");
+        assert_eq!(params["adults"], "2");
+        assert_eq!(params["currency"], "EUR");
+        assert_eq!(params["api_key"], "test-key");
+        assert!(!params.contains_key("return_date"));
     }
 
     #[test]

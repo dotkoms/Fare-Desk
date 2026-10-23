@@ -17,5 +17,6 @@ thiserror.workspace = true
 tracing.workspace = true
 
 [dev-dependencies]
+axum.workspace = true
 faredesk-store = { path = "../store" }
 tokio.workspace = true

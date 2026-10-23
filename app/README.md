@@ -105,7 +105,7 @@ Every data response carries a `provenance` block:
 | Holidays | 24 hours | Serve the last good list, then an empty degraded list |
 | Reference | none | Embedded in the binary; no network |
 
-The live source has a daily quota (`SERPAPI_DAILY_LIMIT`, default 100) tracked in SQLite per source and day. An exhausted quota returns `429 quota_exhausted` with the reset date — or a stale cached answer if one exists. Fixtures are unmetered.
+The live source has a daily quota (`SERPAPI_DAILY_LIMIT`, default 100) tracked in SQLite per source and day. An exhausted quota returns `429 quota_exhausted` with the reset date — or a stale cached answer if one exists. Fixtures are unmetered. A call is counted when it is attempted, including one the upstream rejects, so the cap errs toward protecting spend.
 
 A live search also records the daily minimum per route, travel date and physical service in `fare_history`, which is the table Step 4 turns into percentiles.
 
@@ -120,11 +120,35 @@ node scripts/build-airports.mjs
 
 It joins [OurAirports](https://ourairports.com/data/) (public domain: airports, coordinates, scheduled service) with IANA timezones from [mwgg/Airports](https://github.com/mwgg/Airports) (MIT), keeping large and medium airports with scheduled service. Airports with no known timezone are omitted rather than guessed — 67 today. The generated file is committed so the binary builds and starts offline.
 
+## Deploy
+
+The service is one binary with the reference dataset compiled in and a SQLite ledger on disk.
+
+```bash
+# from the repository root
+docker compose up --build          # API on http://127.0.0.1:8080
+```
+
+Or without Docker:
+
+```bash
+cd app
+cargo build --release -p faredesk-api
+PORT=8080 DATABASE_PATH=/data/faredesk.sqlite ./target/release/faredesk-api
+```
+
+- Mount `/data` (or set `DATABASE_PATH`) so the quota ledger and `fare_history` survive restarts.
+- Set `CORS_ORIGINS` to the deployed web origin; the defaults only cover local development.
+- The container runs as a non-root user and needs outbound HTTPS for SerpAPI, Frankfurter and Nager.Date.
+- There is no authentication or rate limiting in this release. Put the service behind a proxy or a platform gateway before exposing it publicly.
+
+CI runs `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, the full test suite, and the web lint and build on every push (`.github/workflows/ci.yml`).
+
 ## Tests
 
 ```bash
 cd app
-cargo test          # 62 tests
+cargo test          # 63 tests
 cargo clippy --all-targets
 ```
 
@@ -137,4 +161,4 @@ The integration tests in `crates/api/tests/api.rs` run the real router against a
 - **Children are priced at the adult fare.**
 - **The web app prices from this service but still holds its own demo history.** The buy/wait panel is fixture intelligence until Step 5.
 - **No scheduler yet.** History is written by live searches; Step 4 adds the daily collector.
-- **No point-of-sale screening, no alerts, no auth.** Those are Steps 6 and 8.
+- **No point-of-sale screening, no alerts, no auth or rate limiting.** Those are Steps 6, 8 and a deployment concern.

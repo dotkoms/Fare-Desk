@@ -79,12 +79,11 @@ impl AppState {
             providers.clone(),
         )));
         let serpapi = config.serpapi_key.as_ref().map(|key| {
-            Arc::new(Source::SerpApi(SerpApiSource::new(
-                client.clone(),
-                key,
-                providers,
-                places,
-            )))
+            let mut source = SerpApiSource::new(client.clone(), key, providers, places);
+            if let Some(base_url) = &config.serpapi_base_url {
+                source = source.with_base_url(base_url);
+            }
+            Arc::new(Source::SerpApi(source))
         });
 
         Ok(Self {

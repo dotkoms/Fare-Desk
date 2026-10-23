@@ -5,6 +5,8 @@ pub struct Config {
     pub port: u16,
     pub database_path: String,
     pub serpapi_key: Option<String>,
+    /// Override the SerpAPI endpoint (tests, local mocks).
+    pub serpapi_base_url: Option<String>,
     pub serpapi_daily_limit: u32,
     pub cors_origins: Vec<String>,
     pub search_cache_ttl: Duration,
@@ -17,6 +19,7 @@ impl Default for Config {
             port: 8080,
             database_path: "faredesk.sqlite".into(),
             serpapi_key: None,
+            serpapi_base_url: None,
             serpapi_daily_limit: 100,
             cors_origins: vec![
                 "http://localhost:5173".into(),
@@ -45,6 +48,10 @@ impl Config {
                 .unwrap_or(defaults.port),
             database_path: std::env::var("DATABASE_PATH").unwrap_or(defaults.database_path),
             serpapi_key,
+            serpapi_base_url: std::env::var("SERPAPI_BASE_URL")
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
             serpapi_daily_limit: std::env::var("SERPAPI_DAILY_LIMIT")
                 .ok()
                 .and_then(|value| value.parse().ok())

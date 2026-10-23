@@ -271,6 +271,7 @@ dependencies = [
 name = "faredesk-sources"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "chrono",
  "chrono-tz",
  "faredesk-core",

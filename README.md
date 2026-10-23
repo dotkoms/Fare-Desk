@@ -90,6 +90,9 @@ The web app and the data plane are separate services. In development the web app
 # data plane: places, fares, reference data
 cd app
 cargo run -p faredesk-api          # http://127.0.0.1:8080
+
+# or, from the repository root
+docker compose up --build          # same service, SQLite on a volume
 ```
 
 ```bash

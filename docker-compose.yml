@@ -1,0 +1,21 @@
+# Fare Desk data plane. The web app is static and deploys separately.
+services:
+  api:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      DATABASE_PATH: /data/faredesk.sqlite
+      SERPAPI_KEY: ${SERPAPI_KEY:-}
+      SERPAPI_DAILY_LIMIT: ${SERPAPI_DAILY_LIMIT:-100}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173}
+      RUST_LOG: ${RUST_LOG:-faredesk_api=info,tower_http=info}
+    volumes:
+      - faredesk-data:/data
+    restart: unless-stopped
+
+volumes:
+  faredesk-data:
