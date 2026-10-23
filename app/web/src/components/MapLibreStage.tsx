@@ -17,7 +17,7 @@ import land50 from 'world-atlas/land-50m.json'
 import { airportByCode, type GlobeAirport } from '../data/globe'
 import { formatDuration } from '../lib/format'
 import { supportsWebGL } from '../lib/webgl'
-import { NAGAI, PALM_FRONDS, graticule, greatCircle } from '../map/nagai'
+import { NAGAI, PALM, glitter, graticule, greatCircle } from '../map/nagai'
 import type { Itinerary } from '../types'
 import GlobeFallback from './GlobeFallback'
 
@@ -36,6 +36,9 @@ type RouteProps = { key: string; itineraryId: string; selected: boolean; dashed:
 const topo = land50 as unknown as Parameters<typeof feature>[0] & { objects: { land: never } }
 const land = feature(topo, topo.objects.land) as unknown as FeatureCollection
 
+// Height of the stage title and price at the top of the sky; clouds stay below it.
+const TITLE_BAND = 110
+
 const EMPTY: FeatureCollection = { type: 'FeatureCollection', features: [] }
 
 // The poster frame around the data: the top band stays sky, the bottom clears the route strip.
@@ -52,6 +55,7 @@ const style: StyleSpecification = {
   sources: {
     land: { type: 'geojson', data: land },
     graticule: { type: 'geojson', data: graticule() },
+    glitter: { type: 'geojson', data: glitter() },
     routes: { type: 'geojson', data: EMPTY },
     airports: { type: 'geojson', data: EMPTY },
   },
@@ -61,21 +65,44 @@ const style: StyleSpecification = {
       id: 'graticule',
       type: 'line',
       source: 'graticule',
-      paint: { 'line-color': NAGAI.white, 'line-opacity': 0.16, 'line-width': 0.8 },
+      paint: { 'line-color': NAGAI.white, 'line-opacity': 0.1, 'line-width': 0.8 },
+    },
+    // Sun glitter on the water; the land drawn over it hides the strokes that fall on shore.
+    {
+      id: 'glitter',
+      type: 'line',
+      source: 'glitter',
+      layout: { 'line-cap': 'round' },
+      paint: { 'line-color': '#FFFFFF', 'line-opacity': 0.42, 'line-width': ['interpolate', ['linear'], ['zoom'], 1, 0.8, 4, 1.6] },
+    },
+    // Pool-water shallows: two flat turquoise bands ringing every coast, widening as you zoom in.
+    {
+      id: 'shallows-outer',
+      type: 'line',
+      source: 'land',
+      layout: { 'line-join': 'round' },
+      paint: { 'line-color': NAGAI.shallow, 'line-width': ['interpolate', ['linear'], ['zoom'], 1, 3, 3, 12, 6, 28] },
+    },
+    {
+      id: 'shallows-inner',
+      type: 'line',
+      source: 'land',
+      layout: { 'line-join': 'round' },
+      paint: { 'line-color': NAGAI.shallowLight, 'line-width': ['interpolate', ['linear'], ['zoom'], 1, 1.5, 3, 5, 6, 12] },
     },
     // Hard shadow, never blur: the land again, offset in screen space like a low sun.
     {
       id: 'land-shadow',
       type: 'fill',
       source: 'land',
-      paint: { 'fill-color': NAGAI.seaDeep, 'fill-translate': [5, 6], 'fill-translate-anchor': 'viewport' },
+      paint: { 'fill-color': NAGAI.shadow, 'fill-translate': [9, 11], 'fill-translate-anchor': 'viewport' },
     },
     { id: 'land', type: 'fill', source: 'land', paint: { 'fill-color': NAGAI.sand } },
     {
       id: 'coast',
       type: 'line',
       source: 'land',
-      paint: { 'line-color': NAGAI.ink, 'line-opacity': 0.3, 'line-width': 0.8 },
+      paint: { 'line-color': NAGAI.ink, 'line-opacity': 0.22, 'line-width': 0.7 },
     },
     {
       id: 'route-casing',
@@ -144,22 +171,44 @@ const style: StyleSpecification = {
 type Puff = readonly [x: number, y: number, r: number]
 
 // Flat white puffs over a hard flat shade; the base sinks behind the globe's edge.
-const CUMULUS_LEFT: Puff[] = [[60, 118, 30], [100, 92, 42], [152, 70, 50], [204, 96, 38], [242, 120, 26], [130, 128, 34], [190, 132, 30]]
-const CUMULUS_RIGHT: Puff[] = [[40, 92, 24], [74, 68, 34], [114, 80, 30], [144, 98, 22], [90, 104, 26]]
+const CUMULUS_LEFT: Puff[] = [
+  [70, 238, 34], [112, 206, 46], [160, 176, 52], [150, 120, 44], [186, 84, 38], [214, 128, 42],
+  [250, 182, 46], [298, 214, 36], [330, 240, 26], [128, 250, 40], [210, 252, 44], [270, 254, 36],
+]
+const CUMULUS_RIGHT: Puff[] = [[40, 132, 26], [78, 104, 36], [104, 64, 30], [128, 98, 34], [160, 124, 26], [96, 140, 30], [150, 146, 24]]
 
-function Cumulus({ className, width, height, puffs }: { className: string; width: number; height: number; puffs: Puff[] }) {
+function Cumulus({
+  className,
+  width,
+  height,
+  puffs,
+  scale,
+}: {
+  className: string
+  width: number
+  height: number
+  puffs: Puff[]
+  scale: number
+}) {
+  // Cel shading in three flat tones: cool shade low-left, a pale midtone, then the sunlit tops.
+  const tone = (fill: string, dx: number, dy: number, scale: number) => (
+    <g fill={fill}>
+      {puffs.map(([x, y, r]) => (
+        <circle key={`${x}-${y}`} cx={x + dx} cy={y + dy} r={r * scale} />
+      ))}
+    </g>
+  )
   return (
-    <svg className={className} width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
-      <g fill={NAGAI.cloudShade}>
-        {puffs.map(([x, y, r]) => (
-          <circle key={`${x}-${y}`} cx={x + 7} cy={y + 8} r={r} />
-        ))}
-      </g>
-      <g fill="#FFFFFF">
-        {puffs.map(([x, y, r]) => (
-          <circle key={`${x}-${y}`} cx={x} cy={y} r={r} />
-        ))}
-      </g>
+    <svg
+      className={className}
+      width={width}
+      height={height}
+      viewBox={`0 0 ${width} ${height}`}
+      style={{ top: 30 - height, transform: `scale(${scale})` }}
+    >
+      {tone(NAGAI.cloudShade, -10, 12, 1)}
+      {tone(NAGAI.cloudMid, -4, 5, 1)}
+      {tone('#FFFFFF', 3, -2, 0.86)}
     </svg>
   )
 }
@@ -363,6 +412,8 @@ export default function MapLibreStage({ itineraries, selectedId, onSelect, origi
   if (!webgl) return <GlobeFallback />
 
   const showSky = horizon !== null && horizon > -40
+  // Clouds grow from the horizon but never up into the route title and price above them.
+  const cloudRoom = horizon === null ? 0 : Math.max(0, Math.min(1, (horizon - TITLE_BAND) / 250))
 
   return (
     <div className="nagai-stage">
@@ -370,7 +421,9 @@ export default function MapLibreStage({ itineraries, selectedId, onSelect, origi
         <defs>
           <linearGradient id="nagai-sky" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0" stopColor={NAGAI.skyTop} />
-            <stop offset="0.55" stopColor={NAGAI.skyMid} />
+            <stop offset="0.22" stopColor={NAGAI.skyHigh} />
+            <stop offset="0.5" stopColor={NAGAI.skyMid} />
+            <stop offset="0.78" stopColor={NAGAI.skyPale} />
             <stop offset="1" stopColor={NAGAI.skyLow} />
           </linearGradient>
         </defs>
@@ -382,15 +435,17 @@ export default function MapLibreStage({ itineraries, selectedId, onSelect, origi
           <svg className="nagai-sun" width="96" height="96" viewBox="0 0 96 96">
             <circle cx="48" cy="48" r="40" fill={NAGAI.sun} />
           </svg>
-          <Cumulus className="nagai-cumulus nagai-cumulus-left" width={260} height={140} puffs={CUMULUS_LEFT} />
-          <Cumulus className="nagai-cumulus nagai-cumulus-right" width={170} height={110} puffs={CUMULUS_RIGHT} />
+          <Cumulus className="nagai-cumulus nagai-cumulus-left" width={360} height={280} puffs={CUMULUS_LEFT} scale={cloudRoom} />
+          <Cumulus className="nagai-cumulus nagai-cumulus-right" width={190} height={170} puffs={CUMULUS_RIGHT} scale={cloudRoom * 0.8} />
         </div>
       ) : null}
 
       <div className="nagai-map" ref={containerRef} />
 
-      <svg className="nagai-palms" width="360" height="260" viewBox="0 0 360 260" aria-hidden="true">
-        {PALM_FRONDS.map((frond, index) => (
+      <svg className="nagai-palm" viewBox="0 0 300 800" preserveAspectRatio="xMaxYMax meet" aria-hidden="true">
+        <path d={PALM.trunk} fill={NAGAI.palm} />
+        <path d={PALM.rings} fill="none" stroke={NAGAI.shallowLight} strokeOpacity="0.35" strokeWidth="1.5" />
+        {PALM.fronds.map((frond, index) => (
           <g key={index}>
             <path d={frond.leaves} fill={NAGAI.palm} />
             <path d={frond.stem} fill="none" stroke={NAGAI.palm} strokeWidth="4" strokeLinecap="round" />

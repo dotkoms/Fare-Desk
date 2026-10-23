@@ -2,16 +2,24 @@ import type { FeatureCollection, LineString, Position } from 'geojson'
 
 /** The Nagai day palette: flat fills, one warm accent, ink for data. */
 export const NAGAI = {
-  skyTop: '#3FA6D8',
-  skyMid: '#8ED0E6',
-  skyLow: '#E4F2EC',
+  skyTop: '#1B5FAE',
+  skyHigh: '#1E6BB8',
+  skyMid: '#4FAEDD',
+  skyPale: '#A9DDEA',
+  skyLow: '#EEF7F0',
   sea: '#1E86A8',
   seaDeep: '#14627F',
-  sand: '#F0E2C4',
+  /** Pool-water turquoise for the shallows ringing every coast. */
+  shallow: '#2FA9C2',
+  shallowLight: '#4CC8D4',
+  /** Shadows in Nagai's light are cool and crisp, never grey. */
+  shadow: '#16567A',
+  sand: '#F4E5C9',
   ink: '#12324B',
   white: '#FDF8EE',
   sun: '#F2795C',
-  cloudShade: '#BFDCE8',
+  cloudMid: '#D9EBF3',
+  cloudShade: '#A9C7DD',
   palm: '#103A4A',
 } as const
 
@@ -81,13 +89,62 @@ function frond(ox: number, oy: number, angle: number, length: number, bend: numb
   return { leaves, stem }
 }
 
-/** Fronds hanging in from the top-right corner of a 360×260 box. */
-export const PALM_FRONDS = (
-  [
-    [2.05, 300, 0.55],
-    [2.45, 330, 0.6],
-    [2.85, 280, 0.5],
-    [1.7, 230, 0.45],
-    [3.2, 220, 0.35],
-  ] as const
-).map(([angle, length, bend]) => frond(390, -30, angle, length, bend))
+/**
+ * A tall palm standing at the right edge of a 300×800 box: a slender curved trunk with ring
+ * marks and a crown of flat fronds, the way Nagai frames a sky.
+ */
+export const PALM = (() => {
+  const base = { x: 268, y: 812 }
+  const crown = { x: 214, y: 300 }
+  const control = { x: 300, y: 520 }
+  const at = (t: number) => ({
+    x: (1 - t) ** 2 * base.x + 2 * (1 - t) * t * control.x + t * t * crown.x,
+    y: (1 - t) ** 2 * base.y + 2 * (1 - t) * t * control.y + t * t * crown.y,
+  })
+  const left: string[] = []
+  const right: string[] = []
+  const rings: string[] = []
+  for (let i = 0; i <= 30; i++) {
+    const t = i / 30
+    const { x, y } = at(t)
+    const half = 9 - 4 * t
+    left.push(`${(x - half).toFixed(1)} ${y.toFixed(1)}`)
+    right.unshift(`${(x + half).toFixed(1)} ${y.toFixed(1)}`)
+    if (i % 2 === 1 && i < 29) rings.push(`M${(x - half).toFixed(1)} ${y.toFixed(1)}L${(x + half).toFixed(1)} ${(y - 2).toFixed(1)}`)
+  }
+  const trunk = `M${left.join(' L')} L${right.join(' L')}Z`
+  const fronds = (
+    [
+      [3.6, 190, -0.5],
+      [3.1, 210, -0.65],
+      [2.6, 200, -0.7],
+      [2.15, 170, -0.55],
+      [4.2, 170, -0.35],
+      [4.8, 150, 0.4],
+      [5.5, 170, 0.6],
+      [0.3, 140, 0.55],
+    ] as const
+  ).map(([angle, length, bend]) => frond(crown.x, crown.y, angle, length, bend))
+  return { trunk, rings: rings.join(''), fronds }
+})()
+
+/** Sun glitter: short horizontal strokes scattered over the sea, drawn under the land. */
+export function glitter(count = 1400): FeatureCollection<LineString> {
+  let seed = 7
+  const random = () => {
+    seed = (seed * 16807) % 2147483647
+    return seed / 2147483647
+  }
+  const features: FeatureCollection<LineString>['features'] = []
+  for (let i = 0; i < count; i++) {
+    const lat = -60 + random() * 125
+    const lng = -180 + random() * 360
+    const length = 0.6 + random() * 1.8
+    features.push({
+      type: 'Feature',
+      properties: {},
+      geometry: { type: 'LineString', coordinates: [[lng, lat], [lng + length, lat]] },
+    })
+  }
+  return { type: 'FeatureCollection', features }
+}

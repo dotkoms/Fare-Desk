@@ -1266,16 +1266,15 @@ button:disabled {
 
 .nagai-cumulus {
   position: absolute;
+  transform-origin: 50% 100%;
 }
 
 .nagai-cumulus-left {
-  left: 22%;
-  top: -118px;
+  left: 18%;
 }
 
 .nagai-cumulus-right {
-  left: 74%;
-  top: -88px;
+  left: 72%;
 }
 
 .nagai-map {
@@ -1287,10 +1286,11 @@ button:disabled {
   outline: none;
 }
 
-.nagai-palms {
+.nagai-palm {
   position: absolute;
-  top: 0;
-  right: 0;
+  right: -40px;
+  bottom: 0;
+  height: 100%;
   pointer-events: none;
 }
 
@@ -1337,5 +1337,21 @@ button:disabled {
 }
 
 .stage-map:has(.nagai-stage) {
-  background: #e4f2ec;
+  background: #eef7f0;
+}
+
+/* Over the deep top of the sky the stage type turns white, set wide and light like a sleeve. */
+.stage-map:has(.nagai-stage) :is(.stage-head, .stage-price),
+.stage-map:has(.nagai-stage) :is(.stage-kicker, .stage-price small) {
+  color: #ffffff;
+}
+
+.stage-map:has(.nagai-stage) .stage-head h2 {
+  color: #ffffff;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.stage-map:has(.nagai-stage) .stage-kicker {
+  letter-spacing: 0.18em;
 }
