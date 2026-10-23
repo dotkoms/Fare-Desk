@@ -1621,3 +1621,32 @@ button:disabled {
   color: var(--ink-2);
   font-size: 12.5px;
 }
+
+/* Round trip: direction switch and the pair's total */
+.trip-legs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.trip-legs .trip-type button {
+  font-size: 12px;
+}
+
+.trip-total {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 12px;
+}
+
+.trip-total strong {
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 15px;
+}
+
+.route-overlay .route-board + .route-board {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--hairline);
+}

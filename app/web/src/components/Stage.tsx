@@ -14,6 +14,8 @@ const MapStage = useLegacyGlobe ? GlobeStage : MapLibreStage
 
 type Props = {
   itinerary: Itinerary | null
+  /** The chosen return flight on a round trip; a separate ticket. */
+  returnItinerary: Itinerary | null
   tab: 'itinerary' | 'intel'
   onTab: (tab: 'itinerary' | 'intel') => void
   routeLabel: string
@@ -30,6 +32,7 @@ type Props = {
 
 export default function Stage({
   itinerary,
+  returnItinerary,
   tab,
   onTab,
   routeLabel,
@@ -75,12 +78,16 @@ export default function Stage({
         </div>
 
         <div className="stage-price">
-          <span>€{itinerary.total}</span>
-          <small>{passengers > 1 ? `total · ${passengers} travellers` : 'total'}</small>
+          <span>€{itinerary.total + (returnItinerary?.total ?? 0)}</span>
+          <small>
+            {returnItinerary ? 'trip total' : 'total'}
+            {passengers > 1 ? ` · ${passengers} travellers` : ''}
+          </small>
         </div>
 
         <div className="route-overlay">
           <RouteBoard itinerary={itinerary} />
+          {returnItinerary ? <RouteBoard itinerary={returnItinerary} /> : null}
         </div>
       </div>
 
@@ -144,7 +151,7 @@ export default function Stage({
 
             <div className="provider-row">
               <div>
-                <span className="section-kicker">Provider</span>
+                <span className="section-kicker">{returnItinerary ? 'Outbound ticket' : 'Provider'}</span>
                 <strong>{itinerary.provider}</strong>
                 <span className="provider-note">
                   {itinerary.verifiedMinutesAgo === null
@@ -162,14 +169,36 @@ export default function Stage({
               </a>
             </div>
 
-            {itinerary.connectionWarnings.map((warning) => (
+            {returnItinerary ? (
+              <div className="provider-row">
+                <div>
+                  <span className="section-kicker">Return ticket</span>
+                  <strong>{returnItinerary.provider}</strong>
+                  <span className="provider-note">
+                    {returnItinerary.segments[0].depart} →{' '}
+                    {returnItinerary.segments[returnItinerary.segments.length - 1].arrive} · €{returnItinerary.total}
+                  </span>
+                </div>
+                <a
+                  className="button-secondary button-link"
+                  href={returnItinerary.providerUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  Open return on {returnItinerary.provider}
+                </a>
+              </div>
+            ) : null}
+
+            {[...itinerary.connectionWarnings, ...(returnItinerary?.connectionWarnings ?? [])].map((warning) => (
               <p className="stage-warning" key={warning}>
                 {warning}
               </p>
             ))}
 
             <p className="stage-note">
-              We don’t book or take payment. The final price is confirmed on {itinerary.provider}.
+              We don’t book or take payment. The final price is confirmed on{' '}
+              {returnItinerary ? 'each provider' : itinerary.provider}.
             </p>
           </div>
         ) : (

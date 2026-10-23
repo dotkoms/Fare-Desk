@@ -445,6 +445,10 @@ pub struct SearchResponse {
     pub query: SearchQuery,
     pub route: String,
     pub itineraries: Vec<Itinerary>,
+    /// Return flights for a round trip, priced as separate one-way tickets
+    /// from destination back to origin. Empty for a one-way search.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub return_itineraries: Vec<Itinerary>,
     pub provenance: Provenance,
 }
 

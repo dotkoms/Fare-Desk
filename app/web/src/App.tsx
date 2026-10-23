@@ -3,7 +3,7 @@ import DataBadge from './components/DataBadge'
 import Results from './components/Results'
 import SearchPanel from './components/SearchPanel'
 import Stage from './components/Stage'
-import { ApiRequestError, searchFlights, type Provenance } from './lib/api'
+import { searchFlights, type Provenance } from './lib/api'
 import type { Itinerary, Query, Sort } from './types'
 
 const initialQuery: Query = {
@@ -56,13 +56,20 @@ export default function App() {
     new URLSearchParams(window.location.search).get('tab') === 'intel' ? 'intel' : 'itinerary',
   )
   const [results, setResults] = useState<Itinerary[]>([])
+  const [returns, setReturns] = useState<Itinerary[]>([])
+  const [selectedReturnId, setSelectedReturnId] = useState<string | null>(null)
+  const [direction, setDirection] = useState<'out' | 'back'>('out')
   const [provenance, setProvenance] = useState<Provenance | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<ApiRequestError | Error | null>(null)
+  const [error, setError] = useState<Error | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
 
   const sorted = useMemo(() => sortItineraries(results, sort), [results, sort])
   const selected = sorted.find((itinerary) => itinerary.id === selectedId) ?? sorted[0] ?? null
+  const sortedReturns = useMemo(() => sortItineraries(returns, sort), [returns, sort])
+  const selectedReturn =
+    sortedReturns.find((itinerary) => itinerary.id === selectedReturnId) ?? sortedReturns[0] ?? null
+  const showingReturns = direction === 'back' && sortedReturns.length > 0
   const routeLabel = `${activeQuery.origin} → ${activeQuery.destination}`
   const notice = provenance?.degraded ? (provenance.degradedReason ?? null) : null
 
@@ -76,10 +83,12 @@ export default function App() {
         const outcome = await searchFlights(activeQuery)
         if (cancelled) return
         setResults(outcome.itineraries)
+        setReturns(outcome.returns)
         setProvenance(outcome.provenance)
       } catch (cause) {
         if (cancelled) return
         setResults([])
+        setReturns([])
         setProvenance(null)
         setError(cause instanceof Error ? cause : new Error('Could not load flights.'))
       } finally {
@@ -94,18 +103,7 @@ export default function App() {
     }
   }, [activeQuery, refreshKey])
 
-  // Live fares are one-way in this release; offer the one-way search rather than inventing a return price.
-  const errorAction =
-    error instanceof ApiRequestError && error.code === 'return_trip_not_supported'
-      ? {
-          label: 'Search one way instead',
-          run: () => {
-            const oneWay = { ...activeQuery, tripType: 'oneway' as const }
-            setQuery(oneWay)
-            setActiveQuery(oneWay)
-          },
-        }
-      : { label: 'Try again', run: () => setRefreshKey((key) => key + 1) }
+  const retry = { label: 'Try again', run: () => setRefreshKey((key) => key + 1) }
 
   return (
     <div className="app">
@@ -125,33 +123,49 @@ export default function App() {
           onSearch={() => {
             setActiveQuery(query)
             setSelectedId(null)
+            setSelectedReturnId(null)
+            setDirection('out')
             setTab('itinerary')
           }}
         />
 
         <Results
-          itineraries={sorted}
-          selectedId={selected?.id ?? null}
+          itineraries={showingReturns ? sortedReturns : sorted}
+          selectedId={(showingReturns ? selectedReturn : selected)?.id ?? null}
           onSelect={(id) => {
-            setSelectedId(id)
+            if (showingReturns) setSelectedReturnId(id)
+            else setSelectedId(id)
             setTab('itinerary')
           }}
           onIntel={(id) => {
-            setSelectedId(id)
+            if (showingReturns) setSelectedReturnId(id)
+            else setSelectedId(id)
             setTab('intel')
           }}
           sort={sort}
           onSort={setSort}
           loading={loading}
           error={error?.message ?? null}
-          errorAction={errorAction}
+          errorAction={retry}
           notice={notice}
+          trip={
+            sortedReturns.length > 0 && selected && selectedReturn
+              ? {
+                  direction,
+                  onDirection: setDirection,
+                  outbound: `${activeQuery.origin} → ${activeQuery.destination}`,
+                  back: `${activeQuery.destination} → ${activeQuery.origin}`,
+                  total: selected.total + selectedReturn.total,
+                }
+              : null
+          }
         />
       </aside>
 
       <main className="workspace">
         <Stage
           itinerary={selected}
+          returnItinerary={selectedReturn}
           tab={tab}
           onTab={setTab}
           routeLabel={routeLabel}

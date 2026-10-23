@@ -12,6 +12,14 @@ type Props = {
   error: string | null
   notice: string | null
   errorAction: { label: string; run: () => void }
+  /** Present for a round trip: which direction the list shows, and the pair's total. */
+  trip: {
+    direction: 'out' | 'back'
+    onDirection: (direction: 'out' | 'back') => void
+    outbound: string
+    back: string
+    total: number
+  } | null
 }
 
 function stopLabel(stops: number) {
@@ -66,9 +74,7 @@ function ResultCard({
           <span className="result-price">
             €{itinerary.total} <small>total</small>
           </span>
-          <span className="result-bag">
-            {bagLabel(itinerary)}
-          </span>
+          <span className="result-bag">{bagLabel(itinerary)}</span>
         </div>
 
         <div className="result-tags">
@@ -103,6 +109,7 @@ export default function Results({
   error,
   notice,
   errorAction,
+  trip,
 }: Props) {
   return (
     <section className="results" aria-label="Flight results" aria-busy={loading}>
@@ -110,9 +117,7 @@ export default function Results({
         <div>
           <span className="section-kicker">Results</span>
           <strong>
-            {loading
-              ? 'Searching…'
-              : `${itineraries.length} flight${itineraries.length === 1 ? '' : 's'}`}
+            {loading ? 'Searching…' : `${itineraries.length} flight${itineraries.length === 1 ? '' : 's'}`}
           </strong>
         </div>
         <label className="sort-field">
@@ -124,6 +129,32 @@ export default function Results({
           </select>
         </label>
       </div>
+
+      {trip ? (
+        <div className="trip-legs">
+          <div className="trip-type" role="group" aria-label="Flight direction">
+            <button
+              type="button"
+              className={trip.direction === 'out' ? 'is-active' : ''}
+              aria-pressed={trip.direction === 'out'}
+              onClick={() => trip.onDirection('out')}
+            >
+              Outbound · {trip.outbound}
+            </button>
+            <button
+              type="button"
+              className={trip.direction === 'back' ? 'is-active' : ''}
+              aria-pressed={trip.direction === 'back'}
+              onClick={() => trip.onDirection('back')}
+            >
+              Return · {trip.back}
+            </button>
+          </div>
+          <p className="trip-total">
+            <strong>€{trip.total}</strong> trip total · two one-way tickets
+          </p>
+        </div>
+      ) : null}
 
       {notice ? (
         <p className="results-notice" role="status">
