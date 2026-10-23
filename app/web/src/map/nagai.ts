@@ -21,6 +21,8 @@ export const NAGAI = {
   cloudMid: '#D9EBF3',
   cloudShade: '#A9C7DD',
   palm: '#103A4A',
+  /** Fronds further back, one step lighter: flat depth without shading. */
+  palmBack: '#1F5A66',
 } as const
 
 const toRad = (deg: number) => (deg * Math.PI) / 180
@@ -90,43 +92,21 @@ function frond(ox: number, oy: number, angle: number, length: number, bend: numb
 }
 
 /**
- * A tall palm standing at the right edge of a 300×800 box: a slender curved trunk with ring
- * marks and a crown of flat fronds, the way Nagai frames a sky.
+ * Palm fronds hanging into the top-right corner of a 420×300 box, back layer first, so the sky
+ * is framed the way Nagai frames it.
  */
-export const PALM = (() => {
-  const base = { x: 268, y: 812 }
-  const crown = { x: 214, y: 300 }
-  const control = { x: 300, y: 520 }
-  const at = (t: number) => ({
-    x: (1 - t) ** 2 * base.x + 2 * (1 - t) * t * control.x + t * t * crown.x,
-    y: (1 - t) ** 2 * base.y + 2 * (1 - t) * t * control.y + t * t * crown.y,
-  })
-  const left: string[] = []
-  const right: string[] = []
-  const rings: string[] = []
-  for (let i = 0; i <= 30; i++) {
-    const t = i / 30
-    const { x, y } = at(t)
-    const half = 9 - 4 * t
-    left.push(`${(x - half).toFixed(1)} ${y.toFixed(1)}`)
-    right.unshift(`${(x + half).toFixed(1)} ${y.toFixed(1)}`)
-    if (i % 2 === 1 && i < 29) rings.push(`M${(x - half).toFixed(1)} ${y.toFixed(1)}L${(x + half).toFixed(1)} ${(y - 2).toFixed(1)}`)
-  }
-  const trunk = `M${left.join(' L')} L${right.join(' L')}Z`
-  const fronds = (
-    [
-      [3.6, 190, -0.5],
-      [3.1, 210, -0.65],
-      [2.6, 200, -0.7],
-      [2.15, 170, -0.55],
-      [4.2, 170, -0.35],
-      [4.8, 150, 0.4],
-      [5.5, 170, 0.6],
-      [0.3, 140, 0.55],
-    ] as const
-  ).map(([angle, length, bend]) => frond(crown.x, crown.y, angle, length, bend))
-  return { trunk, rings: rings.join(''), fronds }
-})()
+export const PALM = (
+  [
+    [2.3, 300, 0.5, true],
+    [1.9, 250, 0.4, true],
+    [2.75, 320, 0.45, true],
+    [2.05, 310, 0.55, false],
+    [2.5, 340, 0.6, false],
+    [2.95, 290, 0.45, false],
+    [1.65, 230, 0.4, false],
+    [3.25, 230, 0.3, false],
+  ] as const
+).map(([angle, length, bend, back]) => ({ ...frond(450, -30, angle, length, bend), back }))
 
 /** Sun glitter: short horizontal strokes scattered over the sea, drawn under the land. */
 export function glitter(count = 1400): FeatureCollection<LineString> {
@@ -148,3 +128,4 @@ export function glitter(count = 1400): FeatureCollection<LineString> {
   }
   return { type: 'FeatureCollection', features }
 }
+

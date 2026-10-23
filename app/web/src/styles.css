@@ -1260,7 +1260,7 @@ button:disabled {
 
 .nagai-sun {
   position: absolute;
-  left: 62%;
+  left: 50%;
   top: -66px;
 }
 
@@ -1270,11 +1270,11 @@ button:disabled {
 }
 
 .nagai-cumulus-left {
-  left: 18%;
+  left: 31%;
 }
 
 .nagai-cumulus-right {
-  left: 72%;
+  left: 60%;
 }
 
 .nagai-map {
@@ -1288,9 +1288,8 @@ button:disabled {
 
 .nagai-palm {
   position: absolute;
-  right: -40px;
-  bottom: 0;
-  height: 100%;
+  top: 0;
+  right: 0;
   pointer-events: none;
 }
 
@@ -1354,4 +1353,190 @@ button:disabled {
 
 .stage-map:has(.nagai-stage) .stage-kicker {
   letter-spacing: 0.18em;
+}
+
+/*
+ * Nagai theme (style lab board E): warm stucco surfaces, navy ink, hard offset shadows, and the
+ * map full-bleed behind a floating console and a floating detail drawer.
+ */
+:root {
+  --page: #fbf5e9;
+  --surface: #fffdf8;
+  --surface-2: #f1e8d6;
+  --ink: #12324b;
+  --ink-2: #3e5567;
+  --ink-3: #5a6b7a;
+  --hairline: #e3d9c6;
+  --action: #12324b;
+  --action-ink: #fdf8ee;
+  --focus: #12324b;
+  --stage: #fbf5e9;
+  --stage-2: #fffdf8;
+  --stage-ink: #12324b;
+  --stage-ink-2: #3e5567;
+  --stage-line: #e3d9c6;
+  --display: "League Spartan", "Archivo", system-ui, sans-serif;
+  --hard-shadow: 6px 6px 0 rgba(18, 50, 75, 0.85);
+  --card-radius: 12px;
+}
+
+.nagai-stage .nagai-map {
+  position: absolute;
+  inset: 0;
+}
+
+.wordmark {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 23px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* The mark: a coral sun setting on an ink horizon. */
+.wordmark::before {
+  content: "";
+  width: 24px;
+  height: 12px;
+  border-radius: 12px 12px 0 0;
+  background: #f2795c;
+  box-shadow: 0 1.5px 0 var(--ink);
+}
+
+.wordmark span {
+  color: inherit;
+}
+
+.demo-badge {
+  border-radius: 4px;
+  font-size: 10px;
+}
+
+.trip-type {
+  background: var(--surface-2);
+}
+
+.trip-type button.is-active {
+  box-shadow: inset 0 0 0 1px var(--ink);
+}
+
+.field select,
+.field input,
+.swap,
+.sort-field select {
+  border-color: #d9cdb6;
+  background: var(--surface);
+}
+
+.button-primary {
+  height: 44px;
+}
+
+.result {
+  border-radius: 8px;
+}
+
+.result.is-selected {
+  border-color: var(--ink);
+  background: #f7eedb;
+  box-shadow: none;
+}
+
+.result-main:hover {
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+}
+
+.results-notice {
+  margin: 0;
+  border-radius: 4px;
+}
+
+.stage-tabs {
+  gap: 18px;
+}
+
+.facts {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.stage-empty {
+  background: linear-gradient(#1b5fae 0%, #1e6bb8 22%, #4faedd 50%, #a9ddea 78%, #eef7f0 100%);
+}
+
+.stage-empty :is(.stage-kicker, h2, p) {
+  color: #ffffff;
+}
+
+@media (min-width: 901px) {
+  .app {
+    position: relative;
+    display: block;
+    height: 100dvh;
+    overflow: hidden;
+  }
+
+  .workspace {
+    position: absolute;
+    inset: 0;
+  }
+
+  .stage {
+    position: relative;
+    height: 100dvh;
+  }
+
+  .console {
+    position: absolute;
+    top: 24px;
+    bottom: 24px;
+    left: 24px;
+    z-index: 5;
+    width: 380px;
+    max-height: none;
+    padding: 20px;
+    border: 1px solid var(--ink);
+    border-radius: var(--card-radius);
+    background: var(--page);
+    box-shadow: var(--hard-shadow);
+  }
+
+  .stage-detail {
+    position: absolute;
+    top: 132px;
+    right: 24px;
+    bottom: 24px;
+    z-index: 4;
+    width: 360px;
+    max-height: none;
+    padding: 6px 22px 22px;
+    border: 1px solid var(--ink);
+    border-radius: var(--card-radius);
+    background: var(--surface);
+    box-shadow: var(--hard-shadow);
+  }
+
+  .stage-head {
+    left: 444px;
+  }
+
+  /* The top-right corner belongs to the palm; the fare sits in the sky beside the title. */
+  .stage-price {
+    top: 40px;
+    right: 440px;
+  }
+
+  .route-overlay {
+    left: 444px;
+    right: 408px;
+    max-width: none;
+    border: 1px solid var(--ink);
+    border-radius: 8px;
+    background: var(--surface);
+    box-shadow: 3px 3px 0 rgba(18, 50, 75, 0.85);
+  }
+
+  .stage-empty-inner {
+    margin-left: 404px;
+  }
 }

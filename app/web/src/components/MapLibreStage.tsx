@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  LngLat,
   LngLatBounds,
   Map as MapLibreMap,
   Marker,
@@ -12,8 +11,6 @@ import {
 import 'maplibre-gl/dist/maplibre-gl.css'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import type { Feature, FeatureCollection, LineString, Point } from 'geojson'
-import { feature } from 'topojson-client'
-import land50 from 'world-atlas/land-50m.json'
 import { airportByCode, type GlobeAirport } from '../data/globe'
 import { formatDuration } from '../lib/format'
 import { supportsWebGL } from '../lib/webgl'
@@ -33,8 +30,10 @@ type Props = {
 
 type RouteProps = { key: string; itineraryId: string; selected: boolean; dashed: boolean }
 
-const topo = land50 as unknown as Parameters<typeof feature>[0] & { objects: { land: never } }
-const land = feature(topo, topo.objects.land) as unknown as FeatureCollection
+// Natural Earth 50m land, public domain, already cut at the antimeridian (world-atlas rings are
+// spherical, and a ring that wraps the dateline inverts the fill tile by tile). Served as a
+// static file so it stays out of the bundle; PMTiles replaces it when zoom detail matters.
+const LAND_URL = `${import.meta.env.BASE_URL}data/ne_50m_land.geojson`
 
 // Height of the stage title and price at the top of the sky; clouds stay below it.
 const TITLE_BAND = 110
@@ -42,7 +41,17 @@ const TITLE_BAND = 110
 const EMPTY: FeatureCollection = { type: 'FeatureCollection', features: [] }
 
 // The poster frame around the data: the top band stays sky, the bottom clears the route strip.
-const PADDING = { top: 150, bottom: 120, left: 72, right: 72 }
+// On desktop the console and the detail drawer float over the map, so the route fits between them.
+function framePadding(width: number) {
+  return width >= 1100
+    ? { top: 170, bottom: 120, left: 444, right: 408 }
+    : { top: 150, bottom: 120, left: 72, right: 72 }
+}
+
+// A gentle tilt brings the earth's horizon into the frame, the way a Nagai sky meets the sea.
+const OVERVIEW_PITCH = 38
+// Past this the horizon leaves the frame and the scene stops reading as a globe under a sky.
+const MAX_OVERVIEW_ZOOM = 3.3
 
 const prefersReducedMotion = () =>
   typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches
@@ -53,7 +62,7 @@ const style: StyleSpecification = {
   // No atmosphere: the sky is the poster's, drawn behind a transparent canvas.
   sky: { 'atmosphere-blend': 0, 'sky-color': 'rgba(0,0,0,0)', 'horizon-color': 'rgba(0,0,0,0)' },
   sources: {
-    land: { type: 'geojson', data: land },
+    land: { type: 'geojson', data: LAND_URL },
     graticule: { type: 'geojson', data: graticule() },
     glitter: { type: 'geojson', data: glitter() },
     routes: { type: 'geojson', data: EMPTY },
@@ -81,14 +90,14 @@ const style: StyleSpecification = {
       type: 'line',
       source: 'land',
       layout: { 'line-join': 'round' },
-      paint: { 'line-color': NAGAI.shallow, 'line-width': ['interpolate', ['linear'], ['zoom'], 1, 3, 3, 12, 6, 28] },
+      paint: { 'line-color': NAGAI.shallow, 'line-width': ['interpolate', ['linear'], ['zoom'], 1, 2, 3, 6, 6, 12] },
     },
     {
       id: 'shallows-inner',
       type: 'line',
       source: 'land',
       layout: { 'line-join': 'round' },
-      paint: { 'line-color': NAGAI.shallowLight, 'line-width': ['interpolate', ['linear'], ['zoom'], 1, 1.5, 3, 5, 6, 12] },
+      paint: { 'line-color': NAGAI.shallowLight, 'line-width': ['interpolate', ['linear'], ['zoom'], 1, 1, 3, 2.5, 6, 5] },
     },
     // Hard shadow, never blur: the land again, offset in screen space like a low sun.
     {
@@ -231,13 +240,20 @@ function labelElement(className: string, code: string, city?: string) {
   return element
 }
 
-/** Where the top edge of the globe sits on screen, from the projected size of a 10° arc. */
+/** Where the globe's horizon sits on screen: the highest projected point due north of the centre. */
 function limbY(map: MapLibreMap) {
   const center = map.getCenter()
-  const a = map.project(center)
-  const b = map.project([center.lng, Math.min(center.lat + 10, 89)])
-  const radius = Math.hypot(a.x - b.x, a.y - b.y) / Math.sin((10 * Math.PI) / 180)
-  return a.y - radius
+  const lat = (center.lat * Math.PI) / 180
+  const lng = (center.lng * Math.PI) / 180
+  let highest = Infinity
+  for (let degrees = 2; degrees <= 90; degrees += 2) {
+    const d = (degrees * Math.PI) / 180
+    const lat2 = Math.asin(Math.sin(lat) * Math.cos(d) + Math.cos(lat) * Math.sin(d))
+    const lng2 = lng + Math.atan2(0, Math.cos(d) - Math.sin(lat) * Math.sin(lat2))
+    const y = map.project([(lng2 * 180) / Math.PI, (lat2 * 180) / Math.PI]).y
+    if (y < highest) highest = y
+  }
+  return highest
 }
 
 export default function MapLibreStage({ itineraries, selectedId, onSelect, originCode, destinationCode }: Props) {
@@ -315,7 +331,7 @@ export default function MapLibreStage({ itineraries, selectedId, onSelect, origi
       dragRotate: false,
       pitchWithRotate: false,
       touchPitch: false,
-      maxPitch: 0,
+      maxPitch: 50,
       canvasContextAttributes: { antialias: true },
     })
     map.touchZoomRotate.disableRotation()
@@ -380,31 +396,22 @@ export default function MapLibreStage({ itineraries, selectedId, onSelect, origi
     markersRef.current = markers
   }, [ready, routes, airports, selected])
 
-  // Fit the route, but never so close that the curve of the earth leaves the frame.
+  // Fit the route between the floating panels, tilted so the horizon and sky stay in view.
   useEffect(() => {
     const map = mapRef.current
     if (!map || !ready) return
     const points = airports.features.map((item) => (item.geometry as Point).coordinates as [number, number])
     if (points.length === 0) return
-    const bounds = points.reduce(
-      (box, point) => box.extend(point),
-      new LngLatBounds(points[0], points[0]),
-    )
-    const camera = map.cameraForBounds(bounds, { padding: PADDING })
+    const bounds = points.reduce((box, point) => box.extend(point), new LngLatBounds(points[0], points[0]))
+    const padding = framePadding(map.getContainer().clientWidth)
+    const camera = map.cameraForBounds(bounds, { padding })
     if (!camera) return
-
-    const { clientWidth: width, clientHeight: height } = map.getContainer()
-    const cy = PADDING.top + (height - PADDING.top - PADDING.bottom) / 2
-    const maxRadius = 0.95 * Math.hypot(width / 2, cy)
-    const lat = LngLat.convert(camera.center ?? map.getCenter()).lat
-    // Globe radius in px at zoom z is 512·2^z / (2π·cos φ); solve for the zoom that keeps the limb on screen.
-    const limbZoom = Math.log2((maxRadius * 2 * Math.PI * Math.cos((lat * Math.PI) / 180)) / 512)
-    const zoom = Math.min(camera.zoom ?? limbZoom, limbZoom)
 
     map.easeTo({
       center: camera.center,
-      zoom,
-      padding: PADDING,
+      zoom: Math.min(camera.zoom ?? 3, MAX_OVERVIEW_ZOOM),
+      pitch: OVERVIEW_PITCH,
+      padding,
       duration: prefersReducedMotion() ? 0 : 700,
     })
   }, [ready, originCode, destinationCode, airports])
@@ -413,7 +420,7 @@ export default function MapLibreStage({ itineraries, selectedId, onSelect, origi
 
   const showSky = horizon !== null && horizon > -40
   // Clouds grow from the horizon but never up into the route title and price above them.
-  const cloudRoom = horizon === null ? 0 : Math.max(0, Math.min(1, (horizon - TITLE_BAND) / 250))
+  const cloudRoom = horizon === null ? 0 : Math.max(0, Math.min(1, (horizon - TITLE_BAND) / 160))
 
   return (
     <div className="nagai-stage">
@@ -442,13 +449,11 @@ export default function MapLibreStage({ itineraries, selectedId, onSelect, origi
 
       <div className="nagai-map" ref={containerRef} />
 
-      <svg className="nagai-palm" viewBox="0 0 300 800" preserveAspectRatio="xMaxYMax meet" aria-hidden="true">
-        <path d={PALM.trunk} fill={NAGAI.palm} />
-        <path d={PALM.rings} fill="none" stroke={NAGAI.shallowLight} strokeOpacity="0.35" strokeWidth="1.5" />
-        {PALM.fronds.map((frond, index) => (
+      <svg className="nagai-palm" width="420" height="300" viewBox="0 0 420 300" aria-hidden="true">
+        {PALM.map((frond, index) => (
           <g key={index}>
-            <path d={frond.leaves} fill={NAGAI.palm} />
-            <path d={frond.stem} fill="none" stroke={NAGAI.palm} strokeWidth="4" strokeLinecap="round" />
+            <path d={frond.leaves} fill={frond.back ? NAGAI.palmBack : NAGAI.palm} />
+            <path d={frond.stem} fill="none" stroke={frond.back ? NAGAI.palmBack : NAGAI.palm} strokeWidth="4" strokeLinecap="round" />
           </g>
         ))}
       </svg>
