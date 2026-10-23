@@ -16,14 +16,12 @@ type Props = {
   routeLabel: string
   dateLabel: string
   passengers: number
-  bags: number
   itineraries: Itinerary[]
   selectedId: string | null
   onSelect: (id: string) => void
   originCode: string
   destinationCode: string
   isDark: boolean
-  dataNote: string
   loading: boolean
 }
 
@@ -35,14 +33,12 @@ export default function Stage({
   routeLabel,
   dateLabel,
   passengers,
-  bags,
   itineraries,
   selectedId,
   onSelect,
   originCode,
   destinationCode,
   isDark,
-  dataNote,
   loading,
 }: Props) {
   if (!itinerary) {
@@ -50,12 +46,8 @@ export default function Stage({
       <section className="stage stage-empty" aria-label="Selected flight" aria-busy={loading}>
         <div className="stage-empty-inner">
           <span className="stage-kicker">{loading ? 'Searching' : 'No route selected'}</span>
-          <h2>{loading ? 'Asking the data plane for prices.' : 'Search a fixture route to see the fare desk.'}</h2>
-          <p>
-            {loading
-              ? 'The result list and the map update together.'
-              : 'Try BER → LIS, BER → LHR, BER → BCN or BER → JFK.'}
-          </p>
+          <h2>{loading ? 'Finding flights.' : 'Search a route to see the fare desk.'}</h2>
+          {loading ? null : <p>Try BER → LIS, BER → LHR, BER → BCN or BER → JFK.</p>}
         </div>
       </section>
     )
@@ -67,13 +59,12 @@ export default function Stage({
         <div>
           <span className="stage-kicker">{dateLabel}</span>
           <h2>{routeLabel}</h2>
-          <p className="stage-sub">
-            {passengers} traveller{passengers === 1 ? '' : 's'} · {bags} checked bag{bags === 1 ? '' : 's'} · {dataNote}
-          </p>
         </div>
         <div className="stage-price">
           <span>€{itinerary.total}</span>
-          <small>total</small>
+          <small>
+            {passengers > 1 ? `total · ${passengers} travellers` : 'total'}
+          </small>
         </div>
       </div>
 
@@ -162,9 +153,7 @@ export default function Stage({
             </button>
           </div>
 
-          <p className="stage-note">
-            Fare Desk does not book or take payment. This button would open the provider’s site in the live app.
-          </p>
+          <p className="stage-note">Fare Desk does not book or take payment.</p>
         </div>
       ) : (
         <Intel snapshot={snapshot} currentPrice={itinerary.total} />

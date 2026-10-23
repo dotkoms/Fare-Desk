@@ -48,20 +48,6 @@ function sortItineraries<T extends { total: number; durationMinutes: number }>(i
   return copy.sort((a, b) => bestScore(a.total, a.durationMinutes) - bestScore(b.total, b.durationMinutes))
 }
 
-function dataNote(provenance: Provenance | null) {
-  if (provenance?.source === 'fixtures') return 'demo fixtures'
-  switch (provenance?.freshness) {
-    case 'live':
-      return 'live prices'
-    case 'cached':
-      return 'cached prices'
-    case 'stale':
-      return 'last known prices'
-    default:
-      return 'demo fixtures'
-  }
-}
-
 type Theme = 'system' | 'light' | 'dark'
 
 function initialTheme(): Theme {
@@ -178,14 +164,12 @@ export default function App() {
             <div className="wordmark">
               Fare<span>Desk</span>
             </div>
-            <div className="brand-tag">Independent flight intelligence</div>
           </div>
           <DataBadge provenance={visibleProvenance} loading={visibleLoading} error={error} />
         </header>
 
         <SearchPanel
           query={query}
-          dataNote={dataNote(visibleProvenance)}
           onChange={(patch) => setQuery((current) => ({ ...current, ...patch }))}
           onSearch={() => {
             setActiveQuery(query)
@@ -233,8 +217,6 @@ export default function App() {
           routeLabel={routeLabel}
           dateLabel={formatDateRange(activeQuery)}
           passengers={activeQuery.passengers}
-          bags={activeQuery.bags}
-          dataNote={dataNote(visibleProvenance)}
           loading={visibleLoading}
           itineraries={sorted}
           selectedId={selected?.id ?? null}

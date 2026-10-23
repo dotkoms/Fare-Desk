@@ -288,8 +288,6 @@ export default function GlobeStage({
           </div>
         ))}
       </div>
-
-      <div className="globe-hint">Drag to rotate · scroll to zoom</div>
     </div>
   )
 }

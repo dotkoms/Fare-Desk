@@ -112,6 +112,12 @@ Below 1.35 R, a globe shows one hemisphere and the destination can sit behind th
 - Dimming: 60% for context, 35% for non-hovered during a hover, 15% for non-selected. Never 8%; the route structure disappears.
 - No auto-rotation, no draw-on, no pulsing rings, no plane animation. A fare search is not live tracking.
 
+### Copy
+
+- Cut taglines, helper text and secondary labels. If a screen needs them to make sense, fix the layout instead: move the information into the control, the price label or the data itself.
+- Keep disclosures that carry a promise (no booking, no payment, demo data) to one line at the point of action.
+- Name the thing, not the system. "Finding flights", not "asking the data plane".
+
 ---
 
 ## 3. Components

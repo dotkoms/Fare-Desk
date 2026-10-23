@@ -5,7 +5,6 @@ type Props = {
   query: Query
   onChange: (patch: Partial<Query>) => void
   onSearch: () => void
-  dataNote: string
 }
 
 function AirportSelect({
@@ -31,7 +30,7 @@ function AirportSelect({
   )
 }
 
-export default function SearchPanel({ query, onChange, onSearch, dataNote }: Props) {
+export default function SearchPanel({ query, onChange, onSearch }: Props) {
   return (
     <form
       className="search-panel"
@@ -122,10 +121,6 @@ export default function SearchPanel({ query, onChange, onSearch, dataNote }: Pro
       <button className="button-primary" type="submit">
         Search flights
       </button>
-
-      <p className="search-note">
-        Pricing: {dataNote}. Fare Desk links out; it never books or takes payment.
-      </p>
     </form>
   )
 }

@@ -82,7 +82,6 @@ export default function Intel({
           <div className="range-band" />
           <div className="range-marker" style={{ left: `${position}%` }} />
         </div>
-        <p className="range-caption">Middle 80% of fares paid for these dates.</p>
       </div>
 
       <Sparkline values={snapshot.history} />
@@ -117,12 +116,7 @@ export default function Intel({
       </p>
       <p className="intel-downside">{snapshot.downside}.</p>
 
-      <div className="intel-actions">
-        <button className="button-secondary" type="button" disabled>
-          Set alert at €{snapshot.typicalLow} (demo)
-        </button>
-        <span className="demo-note">Demo recommendation, not live advice.</span>
-      </div>
+      <p className="demo-note">Demo recommendation, not live advice.</p>
     </div>
   )
 }

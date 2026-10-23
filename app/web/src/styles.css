@@ -171,14 +171,6 @@ button:disabled {
   color: var(--price-good);
 }
 
-.brand-tag {
-  margin-top: 7px;
-  font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--ink-3);
-}
 
 .demo-badge {
   padding: 3px 6px;
@@ -336,12 +328,6 @@ button:disabled {
   background: var(--surface-2);
 }
 
-.search-note {
-  margin: 0;
-  color: var(--ink-3);
-  font-size: 10.5px;
-  line-height: 1.45;
-}
 
 .results {
   display: flex;
@@ -687,11 +673,6 @@ button:disabled {
   letter-spacing: -0.035em;
 }
 
-.stage-sub {
-  margin: 0;
-  color: var(--stage-ink-2);
-  font-size: 12px;
-}
 
 .stage-price {
   text-align: right;
@@ -824,18 +805,6 @@ button:disabled {
   opacity: 0.72;
 }
 
-.globe-hint {
-  position: absolute;
-  left: 14px;
-  bottom: 12px;
-  color: var(--stage-ink-2);
-  font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  opacity: 0.72;
-  pointer-events: none;
-}
 
 .route-board {
   display: flex;
@@ -1125,11 +1094,6 @@ button:disabled {
   transform: translateX(-1px);
 }
 
-.range-caption {
-  margin: 8px 0 0;
-  color: var(--stage-ink-2);
-  font-size: 10px;
-}
 
 .sparkline {
   width: 100%;
@@ -1188,17 +1152,7 @@ button:disabled {
   font-size: 11.5px;
 }
 
-.intel-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
 
-.intel-actions .button-secondary {
-  border-color: var(--stage-line);
-  color: var(--stage-ink);
-}
 
 .demo-note {
   color: var(--stage-ink-2);

@@ -64,6 +64,11 @@ The orchestrator will produce a trip brief, dispatch the mode scouts, combine th
 | `data/ledger.jsonl` | watchkeeper | all |
 | `data/watchlist.yaml` | you, desk-ops | watchkeeper, air-scout |
 
+## Interface rules
+
+- Cut taglines, helper text and secondary labels. If a screen needs them to make sense, fix the layout.
+- Every change should lift the user experience (UX), the developer experience (DX) and the agent experience (AX) together. If a change trades one away, find the version that does not — and never break a working flow to get there.
+
 ## Ground rules
 
 - No agent books, changes or cancels anything.
