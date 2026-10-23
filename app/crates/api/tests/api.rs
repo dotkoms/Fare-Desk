@@ -988,3 +988,86 @@ async fn reliability_is_empty_with_a_note_without_ingested_data() {
         .iter()
         .any(|note| note.as_str().unwrap().contains("No BTS reliability data")));
 }
+
+#[tokio::test]
+async fn alerts_create_list_and_delete() {
+    let state = state();
+    let body = json!({
+        "email": "Traveler@Example.com",
+        "origin": "BER",
+        "destination": "LIS",
+        "travelDate": depart_date(),
+        "threshold": 100
+    });
+
+    let (status, created) = call(app(state.clone()), "POST", "/api/alerts", Some(body)).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    assert_eq!(created["email"], "traveler@example.com");
+    assert_eq!(created["route"], "BER-LIS");
+    assert_eq!(created["threshold"], 100.0);
+    let id = created["id"].as_i64().unwrap();
+
+    let (status, listed) = call(
+        app(state.clone()),
+        "GET",
+        "/api/alerts?email=traveler@example.com",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(listed["watches"].as_array().unwrap().len(), 1);
+    assert_eq!(listed["alerts"].as_array().unwrap().len(), 0);
+
+    let (status, deleted) = call(
+        app(state.clone()),
+        "DELETE",
+        &format!("/api/alerts/{id}?email=traveler@example.com"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(deleted["deleted"], true);
+
+    let (status, _) = call(
+        app(state.clone()),
+        "DELETE",
+        &format!("/api/alerts/{id}?email=traveler@example.com"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, listed) = call(
+        app(state),
+        "GET",
+        "/api/alerts?email=traveler@example.com",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(listed["watches"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn alerts_validate_the_email_and_threshold() {
+    let body = json!({
+        "email": "not-an-email",
+        "origin": "BER",
+        "destination": "LIS",
+        "travelDate": depart_date()
+    });
+    let (status, error) = call(app(state()), "POST", "/api/alerts", Some(body)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(error["error"]["code"], "invalid_email");
+
+    let body = json!({
+        "email": "a@example.com",
+        "origin": "BER",
+        "destination": "LIS",
+        "travelDate": depart_date(),
+        "threshold": -5
+    });
+    let (status, error) = call(app(state()), "POST", "/api/alerts", Some(body)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(error["error"]["code"], "invalid_threshold");
+}

@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::time::Instant;
 
-use axum::extract::{ConnectInfo, Query, Request, State};
+use axum::extract::{ConnectInfo, Path, Query, Request, State};
 use axum::http::StatusCode;
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
@@ -2248,6 +2248,191 @@ pub async fn reliability(
         carriers,
         provenance,
     }))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateAlertBody {
+    pub email: String,
+    pub origin: String,
+    pub destination: String,
+    pub travel_date: NaiveDate,
+    #[serde(default)]
+    pub threshold: Option<f64>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AlertWatch {
+    pub id: i64,
+    pub email: String,
+    pub route: String,
+    pub travel_date: NaiveDate,
+    pub threshold: Option<f64>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AlertView {
+    pub id: i64,
+    pub route: String,
+    pub travel_date: NaiveDate,
+    pub price: f64,
+    pub kind: String,
+    pub created_at: String,
+    pub delivered_at: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AlertsResponse {
+    pub watches: Vec<AlertWatch>,
+    pub alerts: Vec<AlertView>,
+}
+
+fn watch_view(watch: faredesk_store::Watch) -> AlertWatch {
+    AlertWatch {
+        id: watch.id,
+        email: watch.email,
+        route: watch.route,
+        travel_date: watch.travel_date,
+        threshold: watch.threshold,
+        created_at: watch.created_at,
+    }
+}
+
+fn alert_view(alert: faredesk_store::AlertRow) -> AlertView {
+    AlertView {
+        id: alert.id,
+        route: alert.route,
+        travel_date: alert.travel_date,
+        price: alert.price,
+        kind: alert.kind,
+        created_at: alert.created_at,
+        delivered_at: alert.delivered_at,
+    }
+}
+
+pub async fn create_alert(
+    State(state): State<AppState>,
+    Json(body): Json<CreateAlertBody>,
+) -> Result<Json<AlertWatch>, ApiError> {
+    let email = body.email.trim().to_lowercase();
+    if !email.contains('@') || email.len() > 254 {
+        return Err(ApiError::bad_request(
+            "invalid_email",
+            "Give a valid email address.",
+        ));
+    }
+    if body.travel_date < now().date_naive() {
+        return Err(ApiError::bad_request(
+            "date_in_past",
+            "The travel date has already passed.",
+        ));
+    }
+    if body.threshold.is_some_and(|threshold| threshold <= 0.0) {
+        return Err(ApiError::bad_request(
+            "invalid_threshold",
+            "threshold must be greater than zero.",
+        ));
+    }
+    let origin = resolve_place(&state, &body.origin)?;
+    let destination = resolve_place(&state, &body.destination)?;
+    if origin.code == destination.code {
+        return Err(ApiError::bad_request(
+            "same_place",
+            "Origin and destination are the same airport.",
+        ));
+    }
+    let route = format!("{}-{}", origin.code, destination.code);
+    let id = state
+        .store()
+        .db
+        .create_watch(
+            &email,
+            &route,
+            body.travel_date,
+            body.threshold,
+            &now().to_rfc3339(),
+        )
+        .map_err(|error| ApiError::internal(format!("watch store: {error}")))?;
+
+    Ok(Json(AlertWatch {
+        id,
+        email,
+        route,
+        travel_date: body.travel_date,
+        threshold: body.threshold,
+        created_at: now().to_rfc3339(),
+    }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AlertsParams {
+    pub email: Option<String>,
+}
+
+pub async fn list_alerts(
+    State(state): State<AppState>,
+    Query(params): Query<AlertsParams>,
+) -> Result<Json<AlertsResponse>, ApiError> {
+    let email = params.email.unwrap_or_default().trim().to_lowercase();
+    if email.is_empty() {
+        return Err(ApiError::bad_request(
+            "missing_email",
+            "Give the email the watches belong to, e.g. /api/alerts?email=you@example.com.",
+        ));
+    }
+    let watches = state
+        .store()
+        .db
+        .list_watches(&email)
+        .map_err(|error| ApiError::internal(format!("watch store: {error}")))?
+        .into_iter()
+        .map(watch_view)
+        .collect();
+    let alerts = state
+        .store()
+        .db
+        .alerts_for_email(&email, 50)
+        .map_err(|error| ApiError::internal(format!("alert store: {error}")))?
+        .into_iter()
+        .map(alert_view)
+        .collect();
+
+    Ok(Json(AlertsResponse { watches, alerts }))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeleteAlertParams {
+    pub email: Option<String>,
+}
+
+pub async fn delete_alert(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Query(params): Query<DeleteAlertParams>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let email = params.email.unwrap_or_default().trim().to_lowercase();
+    if email.is_empty() {
+        return Err(ApiError::bad_request(
+            "missing_email",
+            "Give the email the watch belongs to.",
+        ));
+    }
+    let deleted = state
+        .store()
+        .db
+        .delete_watch(id, &email)
+        .map_err(|error| ApiError::internal(format!("watch store: {error}")))?;
+    if !deleted {
+        return Err(ApiError::not_found(
+            "watch_not_found",
+            "No active watch with that id for this email.",
+        ));
+    }
+    Ok(Json(serde_json::json!({ "deleted": true })))
 }
 
 fn parse_dataset(value: &str) -> Option<Dataset> {

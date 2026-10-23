@@ -10,6 +10,28 @@ pub enum DbError {
     Sqlite(#[from] rusqlite::Error),
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct Watch {
+    pub id: i64,
+    pub email: String,
+    pub route: String,
+    pub travel_date: NaiveDate,
+    pub threshold: Option<f64>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AlertRow {
+    pub id: i64,
+    pub email: String,
+    pub route: String,
+    pub travel_date: NaiveDate,
+    pub price: f64,
+    pub kind: String,
+    pub created_at: String,
+    pub delivered_at: Option<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ReliabilityAggregate {
     pub carrier: String,
@@ -107,6 +129,34 @@ impl Db {
             );
 
             CREATE INDEX IF NOT EXISTS reliability_route ON reliability (origin, dest);
+
+            CREATE TABLE IF NOT EXISTS watches (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                email       TEXT NOT NULL,
+                route       TEXT NOT NULL,
+                travel_date TEXT NOT NULL,
+                threshold   REAL,
+                active      INTEGER NOT NULL DEFAULT 1,
+                created_at  TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS watches_email ON watches (email, active);
+            CREATE INDEX IF NOT EXISTS watches_route ON watches (route, travel_date, active);
+
+            CREATE TABLE IF NOT EXISTS alerts (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                watch_id     INTEGER NOT NULL,
+                email        TEXT NOT NULL,
+                route        TEXT NOT NULL,
+                travel_date  TEXT NOT NULL,
+                price        REAL NOT NULL,
+                kind         TEXT NOT NULL,
+                created_at   TEXT NOT NULL,
+                delivered_at TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS alerts_email ON alerts (email, created_at);
+            CREATE INDEX IF NOT EXISTS alerts_watch ON alerts (watch_id, created_at);
             "#,
         )?;
         Ok(Self {
@@ -470,6 +520,156 @@ impl Db {
         Ok(aggregates)
     }
 
+    // -- Watches and alerts -------------------------------------------------
+
+    pub fn create_watch(
+        &self,
+        email: &str,
+        route: &str,
+        travel_date: NaiveDate,
+        threshold: Option<f64>,
+        created_at: &str,
+    ) -> Result<i64, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "INSERT INTO watches (email, route, travel_date, threshold, active, created_at)
+             VALUES (?1, ?2, ?3, ?4, 1, ?5)",
+            params![
+                email,
+                route,
+                travel_date.format("%Y-%m-%d").to_string(),
+                threshold,
+                created_at
+            ],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn list_watches(&self, email: &str) -> Result<Vec<Watch>, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut statement = conn.prepare(
+            "SELECT id, email, route, travel_date, threshold, created_at
+             FROM watches WHERE email = ?1 AND active = 1 ORDER BY id DESC",
+        )?;
+        let rows = statement.query_map(params![email], map_watch)?;
+        collect_watches(rows)
+    }
+
+    pub fn active_watches(&self) -> Result<Vec<Watch>, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut statement = conn.prepare(
+            "SELECT id, email, route, travel_date, threshold, created_at
+             FROM watches WHERE active = 1 ORDER BY id",
+        )?;
+        let rows = statement.query_map([], map_watch)?;
+        collect_watches(rows)
+    }
+
+    /// Soft-delete a watch the caller owns.
+    pub fn delete_watch(&self, id: i64, email: &str) -> Result<bool, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let changed = conn.execute(
+            "UPDATE watches SET active = 0 WHERE id = ?1 AND email = ?2 AND active = 1",
+            params![id, email],
+        )?;
+        Ok(changed > 0)
+    }
+
+    pub fn alerts_for_watch_since(&self, watch_id: i64, since: &str) -> Result<i64, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let count = conn.query_row(
+            "SELECT COUNT(*) FROM alerts WHERE watch_id = ?1 AND created_at >= ?2",
+            params![watch_id, since],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    pub fn alerts_for_email_route_since(
+        &self,
+        email: &str,
+        route: &str,
+        since: &str,
+    ) -> Result<i64, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let count = conn.query_row(
+            "SELECT COUNT(*) FROM alerts WHERE email = ?1 AND route = ?2 AND created_at >= ?3",
+            params![email, route, since],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    pub fn alerts_for_email_since(&self, email: &str, since: &str) -> Result<i64, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let count = conn.query_row(
+            "SELECT COUNT(*) FROM alerts WHERE email = ?1 AND created_at >= ?2",
+            params![email, since],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn record_alert(
+        &self,
+        watch_id: i64,
+        email: &str,
+        route: &str,
+        travel_date: NaiveDate,
+        price: f64,
+        kind: &str,
+        created_at: &str,
+    ) -> Result<i64, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "INSERT INTO alerts (watch_id, email, route, travel_date, price, kind, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                watch_id,
+                email,
+                route,
+                travel_date.format("%Y-%m-%d").to_string(),
+                price,
+                kind,
+                created_at
+            ],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn alerts_for_email(&self, email: &str, limit: i64) -> Result<Vec<AlertRow>, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut statement = conn.prepare(
+            "SELECT id, email, route, travel_date, price, kind, created_at, delivered_at
+             FROM alerts WHERE email = ?1 ORDER BY id DESC LIMIT ?2",
+        )?;
+        let rows = statement.query_map(params![email, limit], map_alert)?;
+        collect_alerts(rows)
+    }
+
+    pub fn undelivered_alerts(&self, limit: i64) -> Result<Vec<AlertRow>, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut statement = conn.prepare(
+            "SELECT id, email, route, travel_date, price, kind, created_at, delivered_at
+             FROM alerts WHERE delivered_at IS NULL ORDER BY id LIMIT ?1",
+        )?;
+        let rows = statement.query_map(params![limit], map_alert)?;
+        collect_alerts(rows)
+    }
+
+    pub fn mark_alerts_delivered(&self, ids: &[i64], at: &str) -> Result<usize, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut changed = 0;
+        for id in ids {
+            changed += conn.execute(
+                "UPDATE alerts SET delivered_at = ?1 WHERE id = ?2 AND delivered_at IS NULL",
+                params![at, id],
+            )?;
+        }
+        Ok(changed)
+    }
+
     pub fn observation_count(&self, route: &str) -> Result<i64, DbError> {
         let conn = self.conn.lock().expect("db lock");
         let count = conn.query_row(
@@ -479,6 +679,87 @@ impl Db {
         )?;
         Ok(count)
     }
+}
+
+type WatchRow = (i64, String, String, String, Option<f64>, String);
+type AlertRowData = (
+    i64,
+    String,
+    String,
+    String,
+    f64,
+    String,
+    String,
+    Option<String>,
+);
+
+fn map_watch(row: &rusqlite::Row<'_>) -> rusqlite::Result<WatchRow> {
+    Ok((
+        row.get(0)?,
+        row.get(1)?,
+        row.get(2)?,
+        row.get(3)?,
+        row.get(4)?,
+        row.get(5)?,
+    ))
+}
+
+fn collect_watches(
+    rows: rusqlite::MappedRows<'_, impl FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<WatchRow>>,
+) -> Result<Vec<Watch>, DbError> {
+    let mut watches = Vec::new();
+    for row in rows {
+        let (id, email, route, travel_date, threshold, created_at) = row?;
+        if let Ok(travel_date) = NaiveDate::parse_from_str(&travel_date, "%Y-%m-%d") {
+            watches.push(Watch {
+                id,
+                email,
+                route,
+                travel_date,
+                threshold,
+                created_at,
+            });
+        }
+    }
+    Ok(watches)
+}
+
+fn map_alert(row: &rusqlite::Row<'_>) -> rusqlite::Result<AlertRowData> {
+    Ok((
+        row.get(0)?,
+        row.get(1)?,
+        row.get(2)?,
+        row.get(3)?,
+        row.get(4)?,
+        row.get(5)?,
+        row.get(6)?,
+        row.get(7)?,
+    ))
+}
+
+fn collect_alerts(
+    rows: rusqlite::MappedRows<
+        '_,
+        impl FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<AlertRowData>,
+    >,
+) -> Result<Vec<AlertRow>, DbError> {
+    let mut alerts = Vec::new();
+    for row in rows {
+        let (id, email, route, travel_date, price, kind, created_at, delivered_at) = row?;
+        if let Ok(travel_date) = NaiveDate::parse_from_str(&travel_date, "%Y-%m-%d") {
+            alerts.push(AlertRow {
+                id,
+                email,
+                route,
+                travel_date,
+                price,
+                kind,
+                created_at,
+                delivered_at,
+            });
+        }
+    }
+    Ok(alerts)
 }
 
 fn day_after(day: &str) -> NaiveDate {
@@ -552,6 +833,60 @@ mod tests {
             Some("EUR")
         );
         assert!(db.has_observation("BER-LIS", travel, day).unwrap());
+    }
+
+    #[test]
+    fn watches_and_alert_caps_round_trip() {
+        let db = Db::open_in_memory().unwrap();
+        let travel = NaiveDate::from_ymd_opt(2027, 3, 1).unwrap();
+        let id = db
+            .create_watch(
+                "a@example.com",
+                "BER-LIS",
+                travel,
+                Some(100.0),
+                "2026-10-23T09:00:00Z",
+            )
+            .unwrap();
+        assert_eq!(db.list_watches("a@example.com").unwrap().len(), 1);
+        assert_eq!(db.active_watches().unwrap().len(), 1);
+
+        db.record_alert(
+            id,
+            "a@example.com",
+            "BER-LIS",
+            travel,
+            99.0,
+            "threshold",
+            "2026-10-23T09:05:00Z",
+        )
+        .unwrap();
+        assert_eq!(
+            db.alerts_for_email_since("a@example.com", "2026-10-20T00:00:00Z")
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            db.alerts_for_email_route_since("a@example.com", "BER-LIS", "2026-10-20T00:00:00Z")
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            db.alerts_for_email("a@example.com", 10).unwrap()[0].price,
+            99.0
+        );
+        assert_eq!(db.undelivered_alerts(10).unwrap().len(), 1);
+        assert_eq!(
+            db.mark_alerts_delivered(
+                &[db.undelivered_alerts(10).unwrap()[0].id],
+                "2026-10-23T10:00:00Z"
+            )
+            .unwrap(),
+            1
+        );
+        assert!(db.undelivered_alerts(10).unwrap().is_empty());
+        assert!(db.delete_watch(id, "a@example.com").unwrap());
+        assert!(db.list_watches("a@example.com").unwrap().is_empty());
     }
 
     #[test]

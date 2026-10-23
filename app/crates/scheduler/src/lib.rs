@@ -4,6 +4,7 @@
 //! its window, one row per route, travel date and observation day: the lowest
 //! price and the offer that produced it.
 
+pub mod alerts;
 pub mod bts;
 
 use std::path::Path;

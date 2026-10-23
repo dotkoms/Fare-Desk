@@ -8,7 +8,7 @@ mod ratelimit;
 use std::sync::Arc;
 
 use axum::http::{HeaderValue, Method};
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post};
 use axum::Router;
 use chrono::{DateTime, Utc};
 use tower_http::catch_panic::CatchPanicLayer;
@@ -257,6 +257,11 @@ pub fn app(state: AppState) -> Router {
         .route("/airport-access", get(handlers::airport_access))
         .route("/door-to-door", get(handlers::door_to_door))
         .route("/reliability", get(handlers::reliability))
+        .route(
+            "/alerts",
+            get(handlers::list_alerts).post(handlers::create_alert),
+        )
+        .route("/alerts/{id}", delete(handlers::delete_alert))
         .route("/data-card", get(handlers::data_cards))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),

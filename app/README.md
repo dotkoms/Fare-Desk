@@ -60,6 +60,9 @@ curl -s -X POST "http://127.0.0.1:8080/api/search" \
 | `GET` | `/api/airport-access?airport=` | City-centre transfers (time, cost), a live OSRM driving leg and minimum connection times |
 | `GET` | `/api/door-to-door?from=&to=&date=` | Party fare plus the cheapest transfer at each end, as a door-to-door total |
 | `GET` | `/api/reliability?from=&to=&price=` | BTS on-time rate per carrier and the reliability-adjusted price |
+| `GET` | `/api/alerts?email=` | Active watches and the last 50 alerts |
+| `POST` | `/api/alerts` | Create a watch for a route and travel date |
+| `DELETE` | `/api/alerts/{id}?email=` | Cancel a watch the email owns |
 | `GET` | `/api/data-card?dataset=` | The source, licence and method behind every dataset |
 
 ### Search body
@@ -211,6 +214,36 @@ cargo run -p faredesk-scheduler --bin faredesk-bts-ingest -- --file /path/to.zip
 
 Run it monthly from cron. `DATABASE_PATH` selects the ledger. BTS is US reporting carriers only; cancellations and diversions are excluded, and the share is flights arriving within 15 minutes of schedule. A route with no ingested months returns an empty list with a note, not a failure. Data card: `reliability-bts` (public domain).
 
+## Alerts
+
+```json
+POST /api/alerts
+{
+  "email": "you@example.com",
+  "origin": "BER",
+  "destination": "LIS",
+  "travelDate": "2027-03-01",
+  "threshold": 100
+}
+```
+
+Omit `threshold` for a new-low watch. `GET /api/alerts?email=` returns the active watches and the last 50 alerts; `DELETE /api/alerts/{id}?email=` cancels one.
+
+Evaluation runs in `faredesk-alerts` against the latest daily minimum, which is written only by the live collector, so every alert is source-verified history:
+
+```bash
+cd app
+cargo run -p faredesk-scheduler --bin faredesk-alerts -- --digest
+```
+
+- **Threshold** fires at or below the threshold. **New low** fires only when today beats every earlier daily minimum.
+- **Caps:** one alert per route per email per week, three per email per week. Suppressed alerts do not consume the cap.
+- **Quiet hours:** `ALERT_QUIET_HOURS` (default `23:00-07:00`, UTC). A quiet-hour suppression is retried on the next run rather than queued.
+- **Stale history is skipped:** if the latest observation is not from today, nothing fires.
+- **Digest:** `--digest` prints undelivered alerts as JSON grouped per alert and marks them delivered. No SMTP client is bundled; a mail sender consumes that outbox.
+
+Run the collector first, then the alert check: cron the collector at 06:07 and `faredesk-alerts --digest` a few minutes later.
+
 ## Point of sale
 
 `POST /api/price-check` screens a shortlisted itinerary in up to five markets: departure country, destination country, US, GB and IE, deduplicated. Each market is one source search, so the endpoint is metered.
@@ -291,7 +324,7 @@ CI runs `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, the fu
 
 ```bash
 cd app
-cargo test          # 133 tests
+cargo test          # 144 tests
 cargo clippy --all-targets
 ```
 

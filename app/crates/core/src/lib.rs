@@ -5,6 +5,7 @@
 //! state.
 
 pub mod advice;
+pub mod alerts;
 pub mod contract;
 pub mod fingerprint;
 pub mod geo;
@@ -17,6 +18,7 @@ pub mod stats;
 pub mod time;
 
 pub use advice::{advise, Advice, AdviceInput, Observation, MIN_OBSERVATIONS};
+pub use alerts::{is_new_low, is_quiet, matches_threshold, parse_quiet_hours};
 pub use contract::*;
 pub use fingerprint::fingerprint;
 pub use insights::{comfort, fare_weather, seasonality};

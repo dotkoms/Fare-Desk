@@ -16,7 +16,7 @@ use faredesk_core::{
 
 pub use access::{access_for, access_note, AirportAccess};
 pub use cache::{Cached, TimedCache};
-pub use db::{Db, DbError, QuotaOutcome};
+pub use db::{AlertRow, Db, DbError, QuotaOutcome, Watch};
 pub use reference::{Reference, ReferenceError};
 pub use registry::{data_cards, load_providers, RegistryError};
 
