@@ -49,6 +49,7 @@ curl -s -X POST "http://127.0.0.1:8080/api/search" \
 | `GET` | `/api/routes?origin=&limit=` | Destinations covered from an airport, with coverage state |
 | `GET` | `/api/route-intel?from=&to=&date=` | Daily minima, p10/p50/p90, current percentile, sample and observation window |
 | `POST` | `/api/search` | Priced, deduplicated, ranked itineraries with provenance |
+| `POST` | `/api/price-check` | Storefront screen: eligibility, net totals with FX, status labels and a recommendation |
 | `GET` | `/api/reference/fx?base=&quote=` | Latest ECB reference rate, cached 24 h, bundled fallback |
 | `GET` | `/api/reference/holidays?country=&year=` | Public holidays, cached 24 h |
 | `GET` | `/api/reference/providers?airport=` | Provider registry and deep-link templates |
@@ -155,6 +156,39 @@ Daily cron, 06:07:
 
 `GET /api/route-intel` reads that history and runs the buy/wait engine: below p10 books now; p10–p50 watches; above the median with more than 45 days to go waits; inside 14 days never promises a late drop; under 14 observations says `insufficient`. It returns the expected 7- and 21-day ranges from observed moves, the downside chance, the lead-time curve, a backtest at 60/30/14 days out when enough completed history exists, plain-language reasons and one line on what would change the call. The track record stays null until the engine has made calls it can score. Every response carries the `fare-history` data card, sample size and observation window.
 
+## Point of sale
+
+`POST /api/price-check` screens a shortlisted itinerary in up to five markets: departure country, destination country, US, GB and IE, deduplicated. Each market is one source search, so the endpoint is metered.
+
+```json
+{
+  "origin": "BER",
+  "destination": "LIS",
+  "departDate": "2027-03-01",
+  "itineraryId": "TAPAirPortugal-TP1041-2027-03-01",
+  "adults": 1,
+  "checkedBags": 1,
+  "homeCurrency": "EUR",
+  "fxFeePercent": 3,
+  "profile": {
+    "residency": "DE",
+    "nationality": "DE",
+    "cardCountries": ["DE"],
+    "paymentMethods": ["card"]
+  }
+}
+```
+
+- **Net total:** fare and bags converted at the card rate, plus the card FX fee when the quote is in another currency. Same-currency rows carry no fee.
+- **Eligible:** the provider accepts a payment method the traveller has and the market is one of their card countries.
+- **Listed:** the price is visible but a local card or billing address may be required. **Ineligible:** the provider's payment methods do not match the profile.
+- **Recommendation:** a foreign storefront only when it is eligible, the net gap is above €20 or 5%, and the same gap was already present on an earlier day in the last seven. Otherwise the home storefront is recommended, with the reason.
+- **Persistence:** every quote is written to `pos_quotes`, so the seven-day check has data to read.
+- **Quota:** one paid search per market. If the daily quota runs out partway through, the response contains the markets screened so far and a degraded reason.
+- **Fixtures:** the fixture source is market-agnostic, so every storefront shows the same total and the endpoint says the home storefront is best. That demonstrates the contract, not a market gap.
+
+Provider links currently point at the source's redirect surface (Google Flights), not the airline's local storefront. Re-pricing at the airline's own market is the remaining piece.
+
 ## Errors
 
 Every failure is a JSON envelope, never an HTML error page or an empty body:
@@ -202,7 +236,7 @@ CI runs `cargo fmt --check`, `cargo clippy --all-targets -- -D warnings`, the fu
 
 ```bash
 cd app
-cargo test          # 87 tests
+cargo test          # 98 tests
 cargo clippy --all-targets
 ```
 

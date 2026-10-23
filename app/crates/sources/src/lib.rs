@@ -71,4 +71,18 @@ impl Source {
             Self::SerpApi(source) => source.search(query).await,
         }
     }
+
+    /// The same search priced in a country storefront. Fixtures are
+    /// market-agnostic and return their one price table.
+    pub async fn search_in_market(
+        &self,
+        query: &ResolvedQuery<'_>,
+        market: &str,
+        currency: &str,
+    ) -> Result<Vec<Offer>, SourceError> {
+        match self {
+            Self::Fixtures(source) => source.search(query),
+            Self::SerpApi(source) => source.search_in_market(query, market, currency).await,
+        }
+    }
 }

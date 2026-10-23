@@ -222,6 +222,7 @@ pub fn app(state: AppState) -> Router {
         .route("/routes", get(handlers::routes))
         .route("/route-intel", get(handlers::route_intel))
         .route("/search", post(handlers::search))
+        .route("/price-check", post(handlers::price_check))
         .route("/reference/fx", get(handlers::fx))
         .route("/reference/holidays", get(handlers::holidays))
         .route("/reference/providers", get(handlers::providers))

@@ -116,6 +116,19 @@ pub fn data_cards(airports_updated_at: DateTime<Utc>, airports_source: String) -
             &["No affiliate relationships."],
         ),
         card(
+            "pos-quotes",
+            Dataset::Pos,
+            "SerpAPI storefront quotes",
+            "SerpAPI terms of service",
+            "The same itinerary screened in the departure, destination, US and GB Google Flights country storefronts, converted to the home currency with the card FX fee. Fixtures return identical prices across markets.",
+            release,
+            &[
+                "Only shortlisted itineraries are screened.",
+                "Eligibility is a filter, not an identity: no card numbers, addresses or documents.",
+                "A foreign storefront is only recommended after the gap persists.",
+            ],
+        ),
+        card(
             "data-cards-registry",
             Dataset::Meta,
             "First-party registry",
@@ -161,6 +174,7 @@ mod tests {
             Dataset::Holidays,
             Dataset::Providers,
             Dataset::History,
+            Dataset::Pos,
             Dataset::Meta,
         ] {
             assert!(

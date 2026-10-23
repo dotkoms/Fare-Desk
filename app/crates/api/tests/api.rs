@@ -562,3 +562,90 @@ async fn route_intel_books_when_the_fare_is_below_p10() {
     // completed its wait yet; the backtest stays honest and null.
     assert!(intel["backtest"].is_null());
 }
+
+fn price_check_body(itinerary_id: &str) -> Value {
+    json!({
+        "origin": "BER",
+        "destination": "LIS",
+        "departDate": depart_date(),
+        "itineraryId": itinerary_id,
+        "adults": 1,
+        "checkedBags": 1,
+        "homeCurrency": "EUR",
+        "fxFeePercent": 3,
+        "profile": {
+            "residency": "DE",
+            "nationality": "DE",
+            "cardCountries": ["DE"],
+            "paymentMethods": ["card"]
+        }
+    })
+}
+
+#[tokio::test]
+async fn price_check_screens_markets_and_keeps_home_for_flat_fixtures() {
+    let state = state();
+    let (status, search) = call(
+        app(state.clone()),
+        "POST",
+        "/api/search",
+        Some(search_body("BER", "LIS")),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let itinerary_id = search["itineraries"][0]["id"].as_str().unwrap().to_string();
+
+    let (status, body) = call(
+        app(state),
+        "POST",
+        "/api/price-check",
+        Some(price_check_body(&itinerary_id)),
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["homeMarket"], "DE");
+    assert_eq!(body["homeCurrency"], "EUR");
+    let quotes = body["quotes"].as_array().unwrap();
+    assert_eq!(quotes.len(), 5);
+    assert_eq!(quotes[0]["market"], "DE");
+    assert_eq!(quotes[0]["status"], "eligible");
+    assert!(quotes
+        .iter()
+        .any(|q| q["market"] == "PT" && q["status"] == "listed"));
+    // Fixtures are market-agnostic: every storefront shows the same total.
+    assert!(quotes
+        .iter()
+        .all(|quote| quote["netTotal"].as_f64() == quotes[0]["netTotal"].as_f64()));
+    assert_eq!(body["recommendation"]["choice"], "home");
+    assert_eq!(body["recommendation"]["saving"], 0.0);
+    assert_eq!(body["provenance"]["dataCardId"], "pos-quotes");
+    assert_eq!(body["provenance"]["freshness"], "fixture");
+    assert!(body["provenance"]["notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|note| note.as_str().unwrap().contains("Fixture source")));
+}
+
+#[tokio::test]
+async fn price_check_rejects_an_unknown_itinerary() {
+    let (status, body) = call(
+        app(state()),
+        "POST",
+        "/api/price-check",
+        Some(price_check_body("NOPE-1-2027-03-01")),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(body["error"]["code"], "itinerary_not_found");
+}
+
+#[tokio::test]
+async fn price_check_validates_the_profile() {
+    let mut body = price_check_body("TAPAirPortugal-TP1041-2027-03-01");
+    body["profile"]["residency"] = json!("DEU");
+    let (status, body) = call(app(state()), "POST", "/api/price-check", Some(body)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"]["code"], "invalid_profile");
+}

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::time::Instant;
 
@@ -11,10 +11,12 @@ use chrono::{DateTime, Duration, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use faredesk_core::{
-    advise, apply_scores, fingerprint, percentile, percentile_rank, price_offer, sort_itineraries,
-    AdviceInput, Cabin, Coverage, DataCard, Dataset, Freshness, FxResponse, HistoryPoint, Holiday,
-    HolidaysResponse, Itinerary, Observation, ObservationWindow, Place, PlacesResponse, Provenance,
-    Provider, ProvidersResponse, Recommendation, RouteIntel, RouteIntelResponse, RouteSummary,
+    advise, apply_scores, currency_for_country, fingerprint, net_total, percentile,
+    percentile_rank, price_offer, recommend, screening_markets, sort_itineraries, status_for,
+    AdviceInput, Cabin, Coverage, DataCard, Dataset, EligibilityProfile, Freshness, FxResponse,
+    HistoryPoint, Holiday, HolidaysResponse, Itinerary, Observation, ObservationWindow, Place,
+    PlacesResponse, PosQuote, PosStatus, PriceCheckResponse, Provenance, Provider,
+    ProvidersResponse, Recommendation, RouteIntel, RouteIntelResponse, RouteSummary,
     RoutesResponse, SearchQuery, SearchResponse, SearchSnapshot, Sort, MIN_OBSERVATIONS,
 };
 use faredesk_sources::{fixtures, ResolvedQuery, SourceError};
@@ -801,6 +803,348 @@ fn notes_for(
         );
     }
     notes
+}
+
+// ---------------------------------------------------------------------------
+// Point of sale
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PriceCheckBody {
+    pub origin: String,
+    pub destination: String,
+    pub depart_date: NaiveDate,
+    pub itinerary_id: String,
+    pub profile: EligibilityProfile,
+    #[serde(default = "one")]
+    pub adults: u8,
+    #[serde(default)]
+    pub checked_bags: u8,
+    #[serde(default = "one")]
+    pub carry_on_bags: u8,
+    #[serde(default)]
+    pub home_currency: Option<String>,
+    #[serde(default)]
+    pub fx_fee_percent: Option<f64>,
+    #[serde(default)]
+    pub source: Option<String>,
+}
+
+fn country_code(value: &str) -> bool {
+    let value = value.trim();
+    value.len() == 2
+        && value
+            .chars()
+            .all(|character| character.is_ascii_alphabetic())
+}
+
+pub async fn price_check(
+    State(state): State<AppState>,
+    Json(body): Json<PriceCheckBody>,
+) -> Result<Json<PriceCheckResponse>, ApiError> {
+    if body.itinerary_id.trim().is_empty() {
+        return Err(ApiError::bad_request(
+            "missing_itinerary",
+            "Give the itineraryId from a previous /api/search response.",
+        ));
+    }
+    if !(1..=9).contains(&body.adults) {
+        return Err(ApiError::bad_request(
+            "invalid_party",
+            "adults must be between 1 and 9.",
+        ));
+    }
+    if body.checked_bags > 5 || body.carry_on_bags > 4 {
+        return Err(ApiError::bad_request(
+            "invalid_bags",
+            "At most 5 checked bags and 4 carry-on bags per traveller.",
+        ));
+    }
+    if !country_code(&body.profile.residency) || !country_code(&body.profile.nationality) {
+        return Err(ApiError::bad_request(
+            "invalid_profile",
+            "residency and nationality must be two-letter ISO country codes.",
+        ));
+    }
+    if body
+        .profile
+        .card_countries
+        .iter()
+        .any(|country| !country_code(country))
+    {
+        return Err(ApiError::bad_request(
+            "invalid_profile",
+            "cardCountries must be two-letter ISO country codes.",
+        ));
+    }
+
+    let origin = resolve_place(&state, &body.origin)?;
+    let destination = resolve_place(&state, &body.destination)?;
+    if origin.code == destination.code {
+        return Err(ApiError::bad_request(
+            "same_place",
+            "Origin and destination are the same airport.",
+        ));
+    }
+    let source = state.source(body.source.as_deref())?;
+    let route = format!("{}-{}", origin.code, destination.code);
+    let home_market = origin.country.to_uppercase();
+    let home_currency = body
+        .home_currency
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_uppercase)
+        .unwrap_or_else(|| currency_for_country(&home_market).to_string());
+    let fx_fee = body.fx_fee_percent.unwrap_or(3.0).clamp(0.0, 20.0);
+    let markets = screening_markets(&origin.country, &destination.country);
+    let today = now().date_naive();
+
+    let mut quotes: Vec<PosQuote> = Vec::new();
+    let mut notes: Vec<String> = Vec::new();
+    let mut degraded: Option<String> = None;
+    let mut quota_exhausted = false;
+
+    for market in &markets {
+        if source.is_live() {
+            match state.store().db.consume_quota(
+                source.id(),
+                today,
+                state.config().serpapi_daily_limit,
+            ) {
+                Ok(QuotaOutcome::Granted { .. }) => {}
+                Ok(QuotaOutcome::Exhausted { .. }) => {
+                    quota_exhausted = true;
+                    notes.push(format!(
+                        "The daily source quota was spent before the {market} screen."
+                    ));
+                    break;
+                }
+                Err(error) => {
+                    return Err(ApiError::internal(format!("quota ledger: {error}")));
+                }
+            }
+        }
+
+        let currency = currency_for_country(market);
+        let query = SearchQuery {
+            origin: origin.code.clone(),
+            destination: destination.code.clone(),
+            depart_date: body.depart_date,
+            adults: body.adults,
+            checked_bags: body.checked_bags,
+            carry_on_bags: body.carry_on_bags,
+            currency: currency.to_string(),
+            ..SearchQuery::default()
+        };
+        let resolved = ResolvedQuery {
+            request: &query,
+            origin: &origin,
+            destination: &destination,
+        };
+
+        let offers = match source.search_in_market(&resolved, market, currency).await {
+            Ok(offers) => offers,
+            Err(error) => {
+                notes.push(format!("{market}: {error}"));
+                continue;
+            }
+        };
+        let Some(offer) = offers
+            .into_iter()
+            .find(|offer| fingerprint(&offer.segments) == body.itinerary_id)
+        else {
+            notes.push(format!("{market}: this itinerary is not listed."));
+            continue;
+        };
+
+        let (_, breakdown) = price_offer(&offer, &query);
+        let quote_currency = offer.currency.to_uppercase();
+        let same_currency = quote_currency == home_currency;
+        let (rate, fx_source, fx_degraded) = if same_currency {
+            (1.0, "identity".to_string(), false)
+        } else {
+            match fx_rate_for(&state, &quote_currency, &home_currency).await {
+                Some((rate, source, degraded)) => (rate, source, degraded),
+                None => {
+                    degraded.get_or_insert_with(|| {
+                        format!(
+                            "No FX rate for {quote_currency}/{home_currency}; net totals are in {quote_currency}."
+                        )
+                    });
+                    (1.0, "unavailable".to_string(), true)
+                }
+            }
+        };
+        if fx_degraded && degraded.is_none() {
+            degraded = Some(format!(
+                "Live FX was unavailable for {quote_currency}/{home_currency}; a bundled rate was used."
+            ));
+        }
+
+        let net = net_total(breakdown.fare, breakdown.bags, rate, fx_fee, same_currency);
+        let fx_fee_amount =
+            ((net - (breakdown.fare + breakdown.bags) * rate) * 100.0).round() / 100.0;
+
+        let provider = state
+            .store()
+            .providers
+            .iter()
+            .find(|provider| provider.name.eq_ignore_ascii_case(&offer.provider_name));
+        let payment_methods: Vec<String> = provider
+            .map(|provider| provider.payment_methods.clone())
+            .unwrap_or_else(|| vec!["card".to_string()]);
+        let status = status_for(&body.profile, market, &payment_methods);
+        let note = match status {
+            PosStatus::Listed => Some(format!(
+                "A card issued in {market} or a local billing address may be required."
+            )),
+            PosStatus::Ineligible => {
+                Some("This provider's payment methods are not in your profile.".to_string())
+            }
+            PosStatus::Eligible => None,
+        };
+        let status_label = match status {
+            PosStatus::Eligible => "eligible",
+            PosStatus::Listed => "listed",
+            PosStatus::Ineligible => "ineligible",
+        };
+
+        let _ = state.store().db.record_pos_quote(
+            &route,
+            body.depart_date,
+            market,
+            &quote_currency,
+            breakdown.fare,
+            breakdown.bags,
+            fx_fee_amount,
+            net,
+            status_label,
+            &offer.provider_name,
+            today,
+        );
+
+        quotes.push(PosQuote {
+            market: market.clone(),
+            currency: quote_currency,
+            fare: breakdown.fare,
+            bags: breakdown.bags,
+            fx_fee: fx_fee_amount,
+            net_total: net,
+            status,
+            provider_name: offer.provider_name,
+            provider_url: offer.provider_url,
+            note,
+        });
+
+        if fx_source == "bundled-snapshot" {
+            notes.push(format!("{market}: bundled FX snapshot used."));
+        }
+    }
+
+    let Some(home_quote) = quotes.iter().find(|quote| quote.market == home_market) else {
+        return Err(ApiError::not_found(
+            "itinerary_not_found",
+            if quotes.is_empty() {
+                "The itinerary was not listed in any screened market; it may have sold out or changed."
+            } else {
+                "The itinerary was not listed in the departure market, so there is no home total to compare against."
+            },
+        ));
+    };
+    let home_net = home_quote.net_total;
+    let threshold = 20.0_f64.max(home_net * 0.05);
+
+    let mut persisted: HashSet<String> = HashSet::new();
+    for quote in &quotes {
+        if quote.market == home_market || quote.status != PosStatus::Eligible {
+            continue;
+        }
+        if quote.net_total > home_net - threshold {
+            continue;
+        }
+        let seen = state
+            .store()
+            .db
+            .prior_pos_gap(
+                &route,
+                body.depart_date,
+                &quote.market,
+                home_net - threshold,
+                today - Duration::days(7),
+                today,
+            )
+            .unwrap_or(false);
+        if seen {
+            persisted.insert(quote.market.clone());
+        }
+    }
+    let recommendation = recommend(&quotes, &home_market, home_net, &persisted, 20.0);
+
+    let mut provenance = base_provenance("pos-quotes", source.id(), quotes.len());
+    provenance.freshness = if source.is_live() {
+        Freshness::Live
+    } else {
+        Freshness::Fixture
+    };
+    provenance
+        .notes
+        .push(format!("Screened markets: {}.", markets.join(", ")));
+    provenance.notes.push(format!(
+        "Net totals include the requested bags and a {fx_fee}% card FX fee when the quote is in another currency."
+    ));
+    provenance.notes.push(
+        "A foreign storefront is recommended only above €20 or 5% and after the gap persists; a first check keeps the home storefront."
+            .to_string(),
+    );
+    if !source.is_live() {
+        provenance.notes.push(
+            "Fixture source: storefronts return identical prices; this demonstrates the contract, not a market gap."
+                .to_string(),
+        );
+    }
+    if quota_exhausted {
+        provenance.degraded = true;
+        provenance.degraded_reason =
+            Some("The daily source quota was spent partway through the screen; only some markets are shown.".to_string());
+    }
+    if let Some(reason) = degraded {
+        provenance.degraded = true;
+        provenance.degraded_reason = Some(reason);
+    }
+    provenance.notes.extend(notes);
+
+    Ok(Json(PriceCheckResponse {
+        route,
+        itinerary_id: body.itinerary_id,
+        home_market,
+        home_currency,
+        quotes,
+        recommendation,
+        provenance,
+    }))
+}
+
+async fn fx_rate_for(state: &AppState, base: &str, quote: &str) -> Option<(f64, String, bool)> {
+    if base.eq_ignore_ascii_case(quote) {
+        return Some((1.0, "identity".to_string(), false));
+    }
+    let key = format!("fx:{base}:{quote}");
+    if let Some(cached) = state.store().fx_cache.get(&key) {
+        return Some((cached.value.rate, cached.value.source, false));
+    }
+    match state.reference_client().fx_rate(base, quote).await {
+        Ok(rate) => {
+            state
+                .store()
+                .fx_cache
+                .insert(key, rate.clone(), state.config().reference_cache_ttl);
+            Some((rate.rate, rate.source, false))
+        }
+        Err(_) => faredesk_sources::reference_data::fallback_fx(base, quote)
+            .map(|rate| (rate.rate, rate.source, true)),
+    }
 }
 
 // ---------------------------------------------------------------------------

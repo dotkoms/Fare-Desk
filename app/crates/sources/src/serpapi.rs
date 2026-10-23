@@ -56,6 +56,26 @@ impl SerpApiSource {
     }
 
     pub async fn search(&self, query: &ResolvedQuery<'_>) -> Result<Vec<Offer>, SourceError> {
+        self.search_with_market(query, None, None).await
+    }
+
+    /// Price the same search in another country storefront (`gl`) and currency.
+    pub async fn search_in_market(
+        &self,
+        query: &ResolvedQuery<'_>,
+        market: &str,
+        currency: &str,
+    ) -> Result<Vec<Offer>, SourceError> {
+        self.search_with_market(query, Some(market), Some(currency))
+            .await
+    }
+
+    async fn search_with_market(
+        &self,
+        query: &ResolvedQuery<'_>,
+        market: Option<&str>,
+        currency: Option<&str>,
+    ) -> Result<Vec<Offer>, SourceError> {
         if query.request.return_date.is_some() {
             return Err(SourceError::InvalidRequest(
                 "the live source prices one direction at a time; search each leg separately".into(),
@@ -65,7 +85,7 @@ impl SerpApiSource {
         let response = self
             .client
             .get(&self.base_url)
-            .query(&self.params(query))
+            .query(&self.params(query, market, currency))
             .timeout(std::time::Duration::from_secs(25))
             .send()
             .await
@@ -104,7 +124,12 @@ impl SerpApiSource {
         Ok(offers)
     }
 
-    fn params(&self, query: &ResolvedQuery<'_>) -> Vec<(&'static str, String)> {
+    fn params(
+        &self,
+        query: &ResolvedQuery<'_>,
+        market: Option<&str>,
+        currency: Option<&str>,
+    ) -> Vec<(&'static str, String)> {
         let request = query.request;
         vec![
             ("engine", "google_flights".to_string()),
@@ -118,9 +143,12 @@ impl SerpApiSource {
             ("travel_class", travel_class(request.cabin).to_string()),
             ("adults", request.adults.max(1).to_string()),
             ("children", request.children.to_string()),
-            ("currency", request.currency.to_uppercase()),
+            (
+                "currency",
+                currency.unwrap_or(&request.currency).to_uppercase(),
+            ),
             ("hl", "en".to_string()),
-            ("gl", "de".to_string()),
+            ("gl", market.unwrap_or("de").to_lowercase()),
             ("deep_search", "false".to_string()),
             ("api_key", self.key.clone()),
         ]

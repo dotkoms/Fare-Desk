@@ -66,6 +66,24 @@ impl Db {
 
             CREATE INDEX IF NOT EXISTS fare_history_route
                 ON fare_history (route, travel_date, observed_on);
+
+            CREATE TABLE IF NOT EXISTS pos_quotes (
+                route              TEXT NOT NULL,
+                travel_date        TEXT NOT NULL,
+                storefront_country TEXT NOT NULL,
+                currency           TEXT NOT NULL,
+                fare               REAL NOT NULL,
+                bags               REAL NOT NULL,
+                fx_fee             REAL NOT NULL,
+                net_total          REAL NOT NULL,
+                status             TEXT NOT NULL,
+                provider           TEXT NOT NULL,
+                observed_at        TEXT NOT NULL,
+                PRIMARY KEY (route, travel_date, storefront_country, observed_at)
+            );
+
+            CREATE INDEX IF NOT EXISTS pos_quotes_lookup
+                ON pos_quotes (route, travel_date, storefront_country, observed_at);
             "#,
         )?;
         Ok(Self {
@@ -277,6 +295,79 @@ impl Db {
                 route,
                 travel_date.format("%Y-%m-%d").to_string(),
                 observed_on.format("%Y-%m-%d").to_string()
+            ],
+            |row| row.get(0),
+        )?;
+        Ok(count > 0)
+    }
+
+    /// Store one storefront quote for a day, replacing any earlier quote from
+    /// the same market that day.
+    #[allow(clippy::too_many_arguments)]
+    pub fn record_pos_quote(
+        &self,
+        route: &str,
+        travel_date: NaiveDate,
+        storefront: &str,
+        currency: &str,
+        fare: f64,
+        bags: f64,
+        fx_fee: f64,
+        net_total: f64,
+        status: &str,
+        provider: &str,
+        observed_on: NaiveDate,
+    ) -> Result<(), DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "INSERT INTO pos_quotes
+             (route, travel_date, storefront_country, currency, fare, bags, fx_fee, net_total, status, provider, observed_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+             ON CONFLICT(route, travel_date, storefront_country, observed_at)
+             DO UPDATE SET currency = excluded.currency, fare = excluded.fare, bags = excluded.bags,
+                           fx_fee = excluded.fx_fee, net_total = excluded.net_total,
+                           status = excluded.status, provider = excluded.provider",
+            params![
+                route,
+                travel_date.format("%Y-%m-%d").to_string(),
+                storefront,
+                currency,
+                fare,
+                bags,
+                fx_fee,
+                net_total,
+                status,
+                provider,
+                observed_on.format("%Y-%m-%d").to_string()
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// True when this market was already cheaper than `net_below` on an
+    /// earlier day in the window. Used for the persistence threshold.
+    #[allow(clippy::too_many_arguments)]
+    pub fn prior_pos_gap(
+        &self,
+        route: &str,
+        travel_date: NaiveDate,
+        storefront: &str,
+        net_below: f64,
+        since: NaiveDate,
+        before: NaiveDate,
+    ) -> Result<bool, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM pos_quotes
+             WHERE route = ?1 AND travel_date = ?2 AND storefront_country = ?3
+               AND net_total <= ?4 AND observed_at >= ?5 AND observed_at < ?6",
+            params![
+                route,
+                travel_date.format("%Y-%m-%d").to_string(),
+                storefront,
+                net_below,
+                since.format("%Y-%m-%d").to_string(),
+                before.format("%Y-%m-%d").to_string()
             ],
             |row| row.get(0),
         )?;

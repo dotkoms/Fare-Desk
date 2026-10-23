@@ -236,6 +236,73 @@ impl SearchQuery {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EligibilityProfile {
+    pub residency: String,
+    pub nationality: String,
+    #[serde(default)]
+    pub card_countries: Vec<String>,
+    #[serde(default)]
+    pub payment_methods: Vec<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PosStatus {
+    Eligible,
+    Listed,
+    Ineligible,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PosQuote {
+    pub market: String,
+    pub currency: String,
+    pub fare: f64,
+    pub bags: f64,
+    pub fx_fee: f64,
+    /// In the home currency, after conversion and the card FX fee.
+    pub net_total: f64,
+    pub status: PosStatus,
+    pub provider_name: String,
+    pub provider_url: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PosChoice {
+    Home,
+    Foreign,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PosRecommendation {
+    pub choice: PosChoice,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub market: Option<String>,
+    pub net_total: f64,
+    pub saving: f64,
+    pub persisted: bool,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PriceCheckResponse {
+    pub route: String,
+    pub itinerary_id: String,
+    pub home_market: String,
+    pub home_currency: String,
+    pub quotes: Vec<PosQuote>,
+    pub recommendation: PosRecommendation,
+    pub provenance: Provenance,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Recommendation {
@@ -498,6 +565,7 @@ pub enum Dataset {
     Holidays,
     Providers,
     History,
+    Pos,
     Meta,
 }
 
