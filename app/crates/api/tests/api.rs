@@ -243,7 +243,7 @@ async fn live_source_with_a_spent_quota_fails_fast() {
 async fn a_dead_source_serves_the_last_good_answer() {
     let state = AppState::in_memory_with_sources(
         Config::default(),
-        Source::Fixtures(FixtureSource::new(HashMap::new(), Vec::new())),
+        Some(Source::Fixtures(FixtureSource::new(HashMap::new(), Vec::new()))),
         None,
     )
     .unwrap();
@@ -287,7 +287,7 @@ async fn a_dead_source_serves_the_last_good_answer() {
 async fn a_dead_source_without_a_cache_is_a_typed_error() {
     let state = AppState::in_memory_with_sources(
         Config::default(),
-        Source::Fixtures(FixtureSource::new(HashMap::new(), Vec::new())),
+        Some(Source::Fixtures(FixtureSource::new(HashMap::new(), Vec::new()))),
         None,
     )
     .unwrap();
@@ -302,9 +302,36 @@ async fn a_dead_source_without_a_cache_is_a_typed_error() {
     assert_eq!(body["error"]["code"], "source_unavailable");
 }
 
+/// Record live daily minima from BER so routes and Explore have a real graph.
+fn seed_history(state: &AppState, destinations: &[&str]) {
+    let today = Utc::now().date_naive();
+    let travel = NaiveDate::from_ymd_opt(2027, 3, 15).unwrap();
+    for destination in destinations {
+        state
+            .store()
+            .db
+            .record_daily_minimum(
+                &format!("BER-{destination}"),
+                travel,
+                today,
+                120.0,
+                "EUR",
+                "serpapi",
+                &format!("seed-{destination}"),
+            )
+            .unwrap();
+    }
+}
+
 #[tokio::test]
-async fn routes_list_the_fixture_graph() {
-    let (status, body) = call(app(state()), "GET", "/api/routes?origin=BER", None).await;
+async fn routes_list_destinations_with_recorded_live_fares() {
+    let state = state();
+    let (status, body) = call(app(state.clone()), "GET", "/api/routes?origin=BER", None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["routes"].as_array().unwrap().is_empty(), "{body}");
+
+    seed_history(&state, &["LIS", "BCN"]);
+    let (status, body) = call(app(state), "GET", "/api/routes?origin=BER", None).await;
     assert_eq!(status, StatusCode::OK);
     let destinations: Vec<&str> = body["routes"]
         .as_array()
@@ -312,9 +339,27 @@ async fn routes_list_the_fixture_graph() {
         .iter()
         .map(|route| route["destination"]["code"].as_str().unwrap())
         .collect();
-    assert_eq!(destinations, vec!["BCN", "JFK", "LHR", "LIS"]);
-    assert_eq!(body["routes"][0]["coverage"], "fixture");
+    assert_eq!(destinations, vec!["BCN", "LIS"]);
+    assert_eq!(body["routes"][0]["coverage"], "none");
+    assert!(body["routes"][0]["lastObservedAt"].is_string());
     assert_eq!(body["provenance"]["dataCardId"], "route-coverage");
+}
+
+#[tokio::test]
+async fn search_without_a_live_source_refuses_to_invent_fares() {
+    let state = AppState::in_memory_with_sources(Config::default(), None, None).unwrap();
+    let (status, body) = call(app(state.clone()), "POST", "/api/search", Some(search_body("BER", "LIS"))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"]["code"], "source_not_configured");
+
+    let mut body = search_body("BER", "LIS");
+    body["source"] = json!("fixtures");
+    let (status, body) = call(app(state.clone()), "POST", "/api/search", Some(body)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"]["code"], "source_not_configured");
+
+    let (_, health) = call(app(state), "GET", "/healthz", None).await;
+    assert_eq!(health["sources"][0]["configured"], false);
 }
 
 #[tokio::test]
@@ -328,12 +373,12 @@ async fn data_cards_expose_every_source() {
         .map(|card| card["id"].as_str().unwrap())
         .collect();
     assert!(ids.contains(&"fares-serpapi"));
-    assert!(ids.contains(&"fares-fixture"));
+    assert!(!ids.contains(&"fares-fixture"));
     assert!(ids.contains(&"route-coverage"));
 
     let (status, body) = call(app(state()), "GET", "/api/data-card?dataset=fares", None).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["cards"].as_array().unwrap().len(), 2);
+    assert_eq!(body["cards"].as_array().unwrap().len(), 1);
 
     let (status, _) = call(app(state()), "GET", "/api/data-card?dataset=nope", None).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -765,8 +810,10 @@ async fn fare_weather_is_insufficient_without_history() {
 
 #[tokio::test]
 async fn explore_returns_a_sorted_validated_feed() {
+    let state = state();
+    seed_history(&state, &["BCN", "JFK", "LHR", "LIS"]);
     let (status, body) = call(
-        app(state()),
+        app(state),
         "GET",
         "/api/explore?home=BER&month=2027-03",
         None,
@@ -790,7 +837,7 @@ async fn explore_returns_a_sorted_validated_feed() {
         .as_array()
         .unwrap()
         .iter()
-        .any(|note| note.as_str().unwrap().contains("demo route graph")));
+        .any(|note| note.as_str().unwrap().contains("recorded live fares")));
 }
 
 #[tokio::test]

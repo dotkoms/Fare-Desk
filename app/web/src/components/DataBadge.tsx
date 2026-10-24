@@ -16,7 +16,7 @@ function describe({ provenance, loading, error }: Props): { label: string; tone:
     return { label: 'Connecting', tone: 'muted', title: 'Asking the data plane for prices' }
   }
   if (!provenance) {
-    return { label: 'Demo data', tone: 'warn', title: 'Bundled demo fixtures' }
+    return { label: 'No data', tone: 'muted', title: 'No answer from the data plane yet' }
   }
 
   const title = [
@@ -27,11 +27,6 @@ function describe({ provenance, loading, error }: Props): { label: string; tone:
     .filter(Boolean)
     .join(' · ')
 
-  // Fixtures stay demo data even when served from the data plane's cache.
-  if (provenance.source === 'fixtures') {
-    return { label: 'Demo data', tone: 'warn', title }
-  }
-
   switch (provenance.freshness) {
     case 'live':
       return { label: 'Live data', tone: 'ok', title }
@@ -40,14 +35,14 @@ function describe({ provenance, loading, error }: Props): { label: string; tone:
     case 'stale':
       return { label: 'Stale data', tone: 'warn', title }
     default:
-      return { label: 'Demo data', tone: 'warn', title }
+      return { label: 'Reference data', tone: 'muted', title }
   }
 }
 
 export default function DataBadge(props: Props) {
   const { label, tone, title } = describe(props)
   return (
-    <span className={`demo-badge is-${tone}`} title={title}>
+    <span className={`data-badge is-${tone}`} title={title}>
       {label}
     </span>
   )

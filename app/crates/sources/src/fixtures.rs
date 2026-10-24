@@ -1,3 +1,6 @@
+//! Test-only demo inventory: compiled for tests and the `test-fixtures` feature,
+//! never into the server binary.
+//!
 //! Deterministic demo inventory. Same route and date, same offers; not real
 //! inventory and never presented as live. Fixture prices do not move with the
 //! calendar, so the UI must label them as fixtures.
@@ -8,7 +11,7 @@ use chrono::{DateTime, Duration, NaiveDate, TimeZone, Timelike, Utc};
 use chrono_tz::Tz;
 use faredesk_core::{Bags, Cabin, FareRules, Offer, Place, Provider, Risk, Segment};
 
-use crate::{ResolvedQuery, SourceError};
+use crate::{fill_template, ResolvedQuery, SourceError};
 
 pub struct FixtureSource {
     places: HashMap<String, Place>,
@@ -728,20 +731,6 @@ fn local_rfc3339(instant: DateTime<Utc>, timezone: &str) -> Result<String, Sourc
         .parse()
         .map_err(|_| SourceError::Unavailable(format!("unknown timezone {timezone}")))?;
     Ok(instant.with_timezone(&tz).to_rfc3339())
-}
-
-pub fn fill_template(
-    template: &str,
-    origin: &str,
-    destination: &str,
-    date: NaiveDate,
-    adults: u8,
-) -> String {
-    template
-        .replace("{origin}", origin)
-        .replace("{destination}", destination)
-        .replace("{date}", &date.format("%Y-%m-%d").to_string())
-        .replace("{adults}", &adults.to_string())
 }
 
 /// The API uses this to refuse to build a fixture source without the airports

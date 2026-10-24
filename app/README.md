@@ -8,7 +8,7 @@ app/
 ├─ crates/
 │  ├─ core/              contract types, pricing, fingerprint, ranking
 │  ├─ store/             embedded reference data, TTL cache, SQLite ledger
-│  ├─ sources/           fixtures, SerpAPI, FX and holiday clients
+│  ├─ sources/           SerpAPI, FX, holiday, climate and ground clients (test-only fixtures)
 │  ├─ scheduler/         daily fare-history collector
 │  └─ api/               Axum HTTP service
 ├─ data/
@@ -28,9 +28,9 @@ cp .env.example .env          # optional; every value has a default
 cargo run -p faredesk-api
 ```
 
-The service listens on `http://127.0.0.1:8080`. With no `SERPAPI_KEY` it answers from the bundled fixture set — a full BER–LIS search, correctly priced for the party and bags, labelled as a fixture.
+The service listens on `http://127.0.0.1:8080`. Fares need `SERPAPI_KEY`: without it, `/api/search` and `/api/explore` answer `400 source_not_configured`. The server binary contains no demo fares; the fixture inventory in `crates/sources/src/fixtures.rs` compiles only for tests (`test-fixtures` feature).
 
-The web app calls this service in development (`VITE_API_BASE`, default `http://127.0.0.1:8080`). If it is not running, the app falls back to its own bundled fixtures, says so above the results, and keeps working offline.
+The web app calls this service through the Vite dev proxy. If it is not running, the app shows an error; it has no fallback data.
 
 ```bash
 curl -s "http://127.0.0.1:8080/api/places?q=lis"
@@ -85,9 +85,9 @@ curl -s -X POST "http://127.0.0.1:8080/api/search" \
 }
 ```
 
-`source` is `auto` (live when `SERPAPI_KEY` is set, fixtures otherwise), `fixtures` or `serpapi`.
+`source` is `auto` or `serpapi`; both need `SERPAPI_KEY`.
 
-Every itinerary carries `totalPrice` for the party **including the requested checked bags**, a `priceBreakdown` that shows the fare and the bag component separately, the included bags, the fare rules, the redirect URL and `verifiedAt` (null for fixtures — a fixture is never a verification).
+Every itinerary carries `totalPrice` for the party **including the requested checked bags**, a `priceBreakdown` that shows the fare and the bag component separately, the included bags, the fare rules, the redirect URL and `verifiedAt` (null when the source did not confirm the price).
 
 ## Provenance
 
@@ -107,7 +107,7 @@ Every data response carries a `provenance` block:
 }
 ```
 
-`freshness` is one of `bundled` (reference data), `fixture`, `live`, `cached` or `stale`. A response without provenance is a bug: `GET /api/data-card` lists the id, source, licence and method for each dataset.
+`freshness` is one of `bundled` (reference data), `live`, `cached` or `stale` (`fixture` appears only in test builds). A response without provenance is a bug: `GET /api/data-card` lists the id, source, licence and method for each dataset.
 
 ## Caching, quota and failure behaviour
 
@@ -118,7 +118,7 @@ Every data response carries a `provenance` block:
 | Holidays | 24 hours | Serve the last good list, then an empty degraded list |
 | Reference | none | Embedded in the binary; no network |
 
-The live source has a daily quota (`SERPAPI_DAILY_LIMIT`, default 100) tracked in SQLite per source and day. An exhausted quota returns `429 quota_exhausted` with the reset date — or a stale cached answer if one exists. Fixtures are unmetered. A call is counted when it is attempted, including one the upstream rejects, so the cap errs toward protecting spend.
+The live source has a daily quota (`SERPAPI_DAILY_LIMIT`, default 100) tracked in SQLite per source and day. An exhausted quota returns `429 quota_exhausted` with the reset date — or a stale cached answer if one exists. A call is counted when it is attempted, including one the upstream rejects, so the cap errs toward protecting spend.
 
 A live search also records the daily minimum per route, travel date and physical service in `fare_history`, which is the table Step 4 turns into percentiles.
 
@@ -273,7 +273,6 @@ Run the collector first, then the alert check: cron the collector at 06:07 and `
 - **Recommendation:** a foreign storefront only when it is eligible, the net gap is above €20 or 5%, and the same gap was already present on an earlier day in the last seven. Otherwise the home storefront is recommended, with the reason.
 - **Persistence:** every quote is written to `pos_quotes`, so the seven-day check has data to read.
 - **Quota:** one paid search per market. If the daily quota runs out partway through, the response contains the markets screened so far and a degraded reason.
-- **Fixtures:** the fixture source is market-agnostic, so every storefront shows the same total and the endpoint says the home storefront is best. That demonstrates the contract, not a market gap.
 
 Provider links currently point at the source's redirect surface (Google Flights), not the airline's local storefront. Re-pricing at the airline's own market is the remaining piece.
 
@@ -328,13 +327,13 @@ cargo test          # 144 tests
 cargo clippy --all-targets
 ```
 
-The integration tests in `crates/api/tests/api.rs` run the real router against an in-memory store: places, a BER–LIS fixture search with bag pricing, cache hits, a dead source served from cache, a dead source without cache, quota exhaustion, validation errors and the data cards.
+The integration tests in `crates/api/tests/api.rs` run the real router against an in-memory store: places, a BER–LIS search against the test-only fixture source with bag pricing, a live round trip against a mock SerpAPI, the no-source refusal, cache hits, a dead source served from cache, a dead source without cache, quota exhaustion, validation errors and the data cards.
 
 ## Known limits in this step
 
-- **Returns are two one-way tickets.** A SerpAPI round trip returns only outbound segment detail while pricing the pair, so a search with `returnDate` runs two one-way searches (two metered calls, each cached) and answers with `itineraries` (outbound) and `returnItineraries` (destination back to origin), each priced on its own. True round-trip fares, which can be cheaper on the provider, are not priced yet. Fixtures fly the demo network back on a mirrored schedule.
+- **Returns are two one-way tickets.** A SerpAPI round trip returns only outbound segment detail while pricing the pair, so a search with `returnDate` runs two one-way searches (two metered calls, each cached) and answers with `itineraries` (outbound) and `returnItineraries` (destination back to origin), each priced on its own. True round-trip fares, which can be cheaper on the provider, are not priced yet.
 - **Bag fees can be estimates.** When the source says a bag costs extra without naming the amount, the curated table in `core::pricing` is used and `bagFeeEstimated` is true.
 - **Children are priced at the adult fare.**
-- **The web app prices from this service but still holds its own demo history.** The buy/wait panel is fixture intelligence until Step 5.
+- **Route coverage and Explore list only routes with recorded live fares.** A schedule feed is needed to list routes that have never been priced.
 - **History needs a key and time.** The collector writes only from a live source; a route needs 14 daily observations before advice appears.
 - **No point-of-sale screening, no alerts, no auth or rate limiting.** Those are Steps 6, 8 and a deployment concern.

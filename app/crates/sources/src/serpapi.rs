@@ -13,8 +13,7 @@ use chrono_tz::Tz;
 use faredesk_core::{Bags, Cabin, FareRules, Offer, Place, Provider, Segment};
 use serde::Deserialize;
 
-use crate::fixtures::fill_template;
-use crate::{ResolvedQuery, SourceError};
+use crate::{fill_template, ResolvedQuery, SourceError};
 
 pub struct SerpApiSource {
     client: reqwest::Client,

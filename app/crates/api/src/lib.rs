@@ -17,7 +17,6 @@ use tower_http::trace::TraceLayer;
 
 use faredesk_core::SearchQuery;
 use faredesk_sources::climate::ClimateClient;
-use faredesk_sources::fixtures::FixtureSource;
 use faredesk_sources::ground::GroundClient;
 use faredesk_sources::reference_data::ReferenceClient;
 use faredesk_sources::serpapi::SerpApiSource;
@@ -37,7 +36,7 @@ pub struct AppState {
 struct Inner {
     store: Store,
     config: Config,
-    fixtures: Arc<Source>,
+    fixtures: Option<Arc<Source>>,
     serpapi: Option<Arc<Source>>,
     reference_client: ReferenceClient,
     climate_client: ClimateClient,
@@ -53,7 +52,7 @@ impl AppState {
         Self::from_store(config, store)
     }
 
-    /// In-memory state for tests and ephemeral demos.
+    /// In-memory state for tests.
     pub fn in_memory(config: Config) -> Result<Self, StoreError> {
         let store = Store::in_memory()?;
         Self::from_store(config, store)
@@ -63,7 +62,7 @@ impl AppState {
     /// simulate an unavailable source without reaching the network.
     pub fn in_memory_with_sources(
         config: Config,
-        fixtures: Source,
+        fixtures: Option<Source>,
         serpapi: Option<Source>,
     ) -> Result<Self, StoreError> {
         let store = Store::in_memory()?;
@@ -72,7 +71,7 @@ impl AppState {
             inner: Arc::new(Inner {
                 store,
                 config,
-                fixtures: Arc::new(fixtures),
+                fixtures: fixtures.map(Arc::new),
                 serpapi: serpapi.map(Arc::new),
                 reference_client: ReferenceClient::new(),
                 climate_client: ClimateClient::new(),
@@ -89,10 +88,8 @@ impl AppState {
         let providers = store.providers.clone();
         let client = reqwest_client();
 
-        let fixtures = Arc::new(Source::Fixtures(FixtureSource::new(
-            places.clone(),
-            providers.clone(),
-        )));
+        // Present only in test builds: the server binary has no demo fares.
+        let fixtures = faredesk_sources::fixture_source(places.clone(), providers.clone()).map(Arc::new);
         let serpapi = config.serpapi_key.as_ref().map(|key| {
             let mut source = SerpApiSource::new(client.clone(), key, providers, places);
             if let Some(base_url) = &config.serpapi_base_url {
@@ -126,8 +123,9 @@ impl AppState {
         &self.inner.config
     }
 
-    pub fn fixtures(&self) -> &Source {
-        &self.inner.fixtures
+    /// The test-only demo source; always `None` in a server build.
+    pub fn fixtures(&self) -> Option<&Source> {
+        self.inner.fixtures.as_deref()
     }
 
     pub fn serpapi(&self) -> Option<&Source> {
@@ -158,25 +156,32 @@ impl AppState {
         self.inner.started_at
     }
 
-    /// Resolve the requested source. `None` means automatic: the live source
-    /// when a key is configured, fixtures otherwise.
+    /// Resolve the requested source. `None` or `auto` means the live source. A server
+    /// build has no other: without SERPAPI_KEY it says so instead of inventing fares.
     pub fn source(&self, requested: Option<&str>) -> Result<Arc<Source>, ApiError> {
+        let not_configured = || {
+            ApiError::bad_request(
+                "source_not_configured",
+                "No live fare source is configured. Set SERPAPI_KEY on the data plane.",
+            )
+        };
         match requested.map(str::trim) {
-            None | Some("") | Some("auto") => Ok(self
+            None | Some("") | Some("auto") => self
                 .inner
                 .serpapi
                 .clone()
-                .unwrap_or_else(|| self.inner.fixtures.clone())),
-            Some("fixtures") => Ok(self.inner.fixtures.clone()),
-            Some("serpapi") => self.inner.serpapi.clone().ok_or_else(|| {
+                .or_else(|| self.inner.fixtures.clone())
+                .ok_or_else(not_configured),
+            Some("serpapi") => self.inner.serpapi.clone().ok_or_else(not_configured),
+            Some("fixtures") => self.inner.fixtures.clone().ok_or_else(|| {
                 ApiError::bad_request(
                     "source_not_configured",
-                    "SerpAPI is not configured. Set SERPAPI_KEY, or ask for source=fixtures.",
+                    "Demo fares are not part of this build.",
                 )
             }),
             Some(other) => Err(ApiError::bad_request(
                 "unknown_source",
-                format!("Unknown source {other:?}. Use auto, fixtures or serpapi."),
+                format!("Unknown source {other:?}. Use auto or serpapi."),
             )),
         }
     }

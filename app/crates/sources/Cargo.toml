@@ -17,6 +17,10 @@ thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 
+[features]
+# Compiles the demo inventory for other crates' tests. Never enable it for a server build.
+test-fixtures = []
+
 [dev-dependencies]
 axum.workspace = true
 faredesk-store = { path = "../store" }

@@ -79,7 +79,7 @@ function ResultCard({
 
         <div className="result-tags">
           {itinerary.verifiedMinutesAgo === null ? (
-            <span className="tag-demo">Not verified</span>
+            <span className="tag-unverified">Not verified</span>
           ) : (
             <span className="tag-verified">Verified {itinerary.verifiedMinutesAgo} min ago</span>
           )}

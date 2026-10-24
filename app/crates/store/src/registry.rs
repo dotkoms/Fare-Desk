@@ -58,15 +58,6 @@ pub fn data_cards(airports_updated_at: DateTime<Utc>, airports_source: String) -
             ],
         ),
         card(
-            "fares-fixture",
-            Dataset::Fares,
-            "Bundled fixture set",
-            "GPL-3.0-or-later",
-            "Deterministic demo offers generated from the route, date and party. Not real inventory and never presented as live.",
-            release,
-            &["Used when no live source key is configured."],
-        ),
-        card(
             "fares-serpapi",
             Dataset::Fares,
             "SerpAPI Google Flights",
