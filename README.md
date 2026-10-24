@@ -84,7 +84,7 @@ fleet/
 
 ## Run the app
 
-The web app and the data plane are separate services. In development the web app calls the local data plane and falls back to its bundled fixtures when the service is not running.
+The web app and the data plane are separate services. In development the web app calls the local data plane through the Vite proxy; it has no fallback data.
 
 ```bash
 # data plane: places, fares, reference data
@@ -102,7 +102,7 @@ npm install
 npm run dev
 ```
 
-With no `SERPAPI_KEY`, the API answers from the bundled fixture set for BER–LIS, BER–LHR, BER–BCN and BER–JFK: a real search shape, a party- and bag-correct total, and provenance that says `fixture` rather than pretending otherwise. With a key it queries Google Flights through SerpAPI, caches for ten minutes, meters a daily quota and records the daily minimum in `fare_history`.
+Fares need `SERPAPI_KEY`; without it the API says `source_not_configured` rather than serving demo fares. With a key it queries Google Flights through SerpAPI, caches for ten minutes, meters a daily quota and records the daily minimum in `fare_history`.
 
 Endpoints, provenance, cache and quota behaviour: [app/README.md](app/README.md).
 

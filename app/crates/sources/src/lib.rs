@@ -1,12 +1,15 @@
 //! Fare sources and reference-data clients.
 
 pub mod climate;
+/// Demo inventory for tests only; the server never serves it.
+#[cfg(any(test, feature = "test-fixtures"))]
 pub mod fixtures;
 pub mod ground;
 pub mod reference_data;
 pub mod serpapi;
 pub mod transit;
 
+use chrono::NaiveDate;
 use faredesk_core::{Offer, Place, SearchQuery};
 
 #[derive(Debug, thiserror::Error)]
@@ -45,6 +48,7 @@ impl ResolvedQuery<'_> {
 /// The configured fare sources. An enum keeps the trait async without a boxed
 /// future or an extra dependency.
 pub enum Source {
+    #[cfg(any(test, feature = "test-fixtures"))]
     Fixtures(fixtures::FixtureSource),
     SerpApi(serpapi::SerpApiSource),
 }
@@ -52,6 +56,7 @@ pub enum Source {
 impl Source {
     pub fn id(&self) -> &'static str {
         match self {
+            #[cfg(any(test, feature = "test-fixtures"))]
             Self::Fixtures(source) => source.id(),
             Self::SerpApi(source) => source.id(),
         }
@@ -59,6 +64,7 @@ impl Source {
 
     pub fn data_card_id(&self) -> &'static str {
         match self {
+            #[cfg(any(test, feature = "test-fixtures"))]
             Self::Fixtures(source) => source.data_card_id(),
             Self::SerpApi(source) => source.data_card_id(),
         }
@@ -70,6 +76,7 @@ impl Source {
 
     pub async fn search(&self, query: &ResolvedQuery<'_>) -> Result<Vec<Offer>, SourceError> {
         match self {
+            #[cfg(any(test, feature = "test-fixtures"))]
             Self::Fixtures(source) => source.search(query),
             Self::SerpApi(source) => source.search(query).await,
         }
@@ -84,8 +91,42 @@ impl Source {
         currency: &str,
     ) -> Result<Vec<Offer>, SourceError> {
         match self {
+            #[cfg(any(test, feature = "test-fixtures"))]
             Self::Fixtures(source) => source.search(query),
             Self::SerpApi(source) => source.search_in_market(query, market, currency).await,
         }
     }
+}
+
+/// Fill a provider deep-link template (`{origin}`, `{destination}`, `{date}`, `{adults}`).
+pub fn fill_template(
+    template: &str,
+    origin: &str,
+    destination: &str,
+    date: NaiveDate,
+    adults: u8,
+) -> String {
+    template
+        .replace("{origin}", origin)
+        .replace("{destination}", destination)
+        .replace("{date}", &date.format("%Y-%m-%d").to_string())
+        .replace("{adults}", &adults.to_string())
+}
+
+/// The demo fare source, in test builds only. A server build returns `None`, so
+/// it can only ever answer with live fares or say that none are configured.
+#[cfg(any(test, feature = "test-fixtures"))]
+pub fn fixture_source(
+    places: std::collections::HashMap<String, Place>,
+    providers: Vec<faredesk_core::Provider>,
+) -> Option<Source> {
+    Some(Source::Fixtures(fixtures::FixtureSource::new(places, providers)))
+}
+
+#[cfg(not(any(test, feature = "test-fixtures")))]
+pub fn fixture_source(
+    _places: std::collections::HashMap<String, Place>,
+    _providers: Vec<faredesk_core::Provider>,
+) -> Option<Source> {
+    None
 }

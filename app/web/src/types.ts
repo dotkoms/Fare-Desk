@@ -34,7 +34,7 @@ export type Itinerary = {
   providerUrl: string
   /** Layovers shorter than the airport's minimum connection time, in plain words. */
   connectionWarnings: string[]
-  /** Null when the source could not confirm the price (fixtures, demo data). */
+  /** Null when the source could not confirm the price. */
   verifiedMinutesAgo: number | null
   risk: Array<'Self-transfer' | 'OTA only' | 'Hidden city'>
   fareFamily: string

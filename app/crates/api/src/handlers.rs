@@ -24,7 +24,7 @@ use faredesk_core::{
     DoorToDoorResponse, ExploreCache, ExploreCoverage, ExploreResponse, ExploreRow,
     FareWeatherResponse, SeasonalityResponse,
 };
-use faredesk_sources::{fixtures, ResolvedQuery, Source, SourceError};
+use faredesk_sources::{ResolvedQuery, Source, SourceError};
 use faredesk_store::{access_for, access_note};
 use faredesk_store::{Cached, QuotaOutcome};
 
@@ -124,7 +124,7 @@ pub async fn health(State(state): State<AppState>) -> Json<Health> {
         sources: vec![
             SourceHealth {
                 id: "fixtures",
-                configured: true,
+                configured: state.fixtures().is_some(),
                 live: false,
                 daily_limit: None,
                 used_today: None,
@@ -205,32 +205,37 @@ pub async fn routes(
     let limit = params.limit.unwrap_or(20).clamp(1, 100);
 
     let live = state.serpapi().is_some();
-    let coverage = if live {
-        Coverage::Live
-    } else {
-        Coverage::Fixture
-    };
+    let observed = state
+        .store()
+        .db
+        .observed_destinations(&origin.code)
+        .map_err(|error| ApiError::internal(format!("route history: {error}")))?;
 
-    let mut summaries: Vec<RouteSummary> = fixtures::known_routes()
+    let mut summaries: Vec<RouteSummary> = observed
         .into_iter()
-        .filter(|(from, _)| from.eq_ignore_ascii_case(&origin.code))
-        .filter_map(|(_, to)| state.store().reference.by_code(to).cloned())
-        .map(|destination| RouteSummary {
-            origin: origin.clone(),
-            destination,
-            coverage,
-            last_observed_at: None,
+        .filter_map(|(code, last)| {
+            let destination = state.store().reference.by_code(&code)?.clone();
+            Some(RouteSummary {
+                origin: origin.clone(),
+                destination,
+                coverage: if live { Coverage::Live } else { Coverage::None },
+                last_observed_at: last.and_hms_opt(0, 0, 0).map(|day| day.and_utc()),
+            })
         })
         .collect();
     summaries.sort_by(|a, b| a.destination.code.cmp(&b.destination.code));
     summaries.truncate(limit);
 
-    let mut provenance = base_provenance("route-coverage", "registry", summaries.len());
-    provenance.notes = vec![if live {
-        "A live source is configured; route coverage still reflects the demo graph.".to_string()
-    } else {
-        "No live source is configured; routes come from the demo fixture graph.".to_string()
-    }];
+    let mut provenance = base_provenance("route-coverage", "fare-history", summaries.len());
+    provenance.notes = vec![format!(
+        "Routes from {} with recorded live fares; a schedule feed is needed to list routes never priced.",
+        origin.code
+    )];
+    if !live {
+        provenance
+            .notes
+            .push("No live fare source is configured, so these routes cannot be priced now.".to_string());
+    }
     if summaries.is_empty() {
         provenance
             .notes
@@ -652,7 +657,7 @@ async fn search_direction(
                     ));
                 }
                 return Err(ApiError::quota_exhausted(
-                    "The daily source quota is spent. Try again tomorrow, or ask for source=fixtures.",
+                    "The daily source quota is spent. Try again tomorrow.",
                     reset_on.format("%Y-%m-%d").to_string(),
                 ));
             }
@@ -1006,10 +1011,13 @@ pub async fn explore(
         }));
     }
 
-    let mut destinations: Vec<Place> = fixtures::known_routes()
+    let mut destinations: Vec<Place> = state
+        .store()
+        .db
+        .observed_destinations(&home.code)
+        .map_err(|error| ApiError::internal(format!("route history: {error}")))?
         .into_iter()
-        .filter(|(origin, _)| origin.eq_ignore_ascii_case(&home.code))
-        .filter_map(|(_, destination)| state.store().reference.by_code(destination).cloned())
+        .filter_map(|(code, _)| state.store().reference.by_code(&code).cloned())
         .collect();
     destinations.sort_by(|a, b| a.code.cmp(&b.code));
     destinations.dedup_by(|a, b| a.code == b.code);
@@ -1137,7 +1145,7 @@ pub async fn explore(
     };
     provenance.observed_at = generated_at;
     provenance.notes.push(
-        "Destinations come from the demo route graph; a schedule feed is required for wider coverage."
+        "Destinations are the routes from this airport with recorded live fares; a schedule feed is required for wider coverage."
             .to_string(),
     );
     provenance

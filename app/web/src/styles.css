@@ -120,7 +120,7 @@ button:disabled {
 }
 
 
-.demo-badge {
+.data-badge {
   padding: 3px 6px;
   border: 1px solid var(--status-warn);
   border-radius: 3px;
@@ -132,17 +132,17 @@ button:disabled {
   white-space: nowrap;
 }
 
-.demo-badge.is-ok {
+.data-badge.is-ok {
   border-color: var(--status-ok);
   color: var(--status-ok);
 }
 
-.demo-badge.is-muted {
+.data-badge.is-muted {
   border-color: var(--hairline);
   color: var(--ink-3);
 }
 
-.demo-badge.is-danger {
+.data-badge.is-danger {
   border-color: var(--status-danger);
   color: var(--status-danger);
 }
@@ -427,7 +427,7 @@ button:disabled {
 
 .tag-verified,
 .tag-risk,
-.tag-demo {
+.tag-unverified {
   padding: 2px 5px;
   border-radius: 3px;
   font-family: var(--mono);
@@ -435,12 +435,12 @@ button:disabled {
 }
 
 .tag-verified,
-.tag-demo {
+.tag-unverified {
   color: var(--status-ok);
   background: color-mix(in srgb, var(--status-ok) 10%, transparent);
 }
 
-.tag-demo {
+.tag-unverified {
   color: var(--ink-3);
   background: var(--surface-2);
 }
@@ -735,38 +735,9 @@ button:disabled {
   }
 }
 
-.globe-labels {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  pointer-events: none;
-}
 
-.globe-label {
-  position: absolute;
-  transform: translate(10px, -50%);
-  padding: 3px 6px;
-  border-radius: 3px;
-  font-family: var(--mono);
-  font-size: 10px;
-  line-height: 1.2;
-  white-space: nowrap;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
-}
 
-.globe-label strong {
-  display: block;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-}
 
-.globe-label span {
-  display: block;
-  margin-top: 1px;
-  font-family: var(--sans);
-  font-size: 9px;
-  opacity: 0.72;
-}
 
 
 .route-board {
@@ -1113,13 +1084,6 @@ button:disabled {
 
 
 
-.demo-note {
-  color: var(--stage-ink-2);
-  font-family: var(--mono);
-  font-size: 9px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
 
 .intel-empty h3 {
   margin: 6px 0;
@@ -1408,7 +1372,7 @@ button:disabled {
   color: inherit;
 }
 
-.demo-badge {
+.data-badge {
   border-radius: 4px;
   font-size: 10px;
 }

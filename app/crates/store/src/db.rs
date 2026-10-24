@@ -374,6 +374,31 @@ impl Db {
         Ok(count > 0)
     }
 
+    /// Destinations with recorded live fares from `origin`, with the last day each
+    /// was observed. This is the route graph: what has actually been priced.
+    pub fn observed_destinations(&self, origin: &str) -> Result<Vec<(String, NaiveDate)>, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut statement = conn.prepare(
+            "SELECT substr(route, length(?1) + 2) AS destination, MAX(observed_on)
+             FROM fare_history
+             WHERE route LIKE ?1 || '-%' AND source != 'fixtures'
+             GROUP BY destination
+             ORDER BY destination",
+        )?;
+        let rows = statement
+            .query_map(params![origin.to_ascii_uppercase()], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?
+            .filter_map(Result::ok)
+            .filter_map(|(destination, day)| {
+                NaiveDate::parse_from_str(&day, "%Y-%m-%d")
+                    .ok()
+                    .map(|day| (destination, day))
+            })
+            .collect();
+        Ok(rows)
+    }
+
     pub fn observation_count(&self, route: &str) -> Result<i64, DbError> {
         let conn = self.conn.lock().expect("db lock");
         let count = conn.query_row(

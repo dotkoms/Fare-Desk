@@ -5,12 +5,8 @@ import Intel from './Intel'
 import RouteBoard from './RouteBoard'
 import { formatDuration } from '../lib/format'
 
-// three.js is heavy; keep it out of the shell bundle and load it alongside the stage
-const GlobeStage = lazy(() => import('./GlobeStage'))
-// Spike: the flat-shaded MapLibre globe; ?map=globe brings back the three.js globe for comparison.
-const MapLibreStage = lazy(() => import('./MapLibreStage'))
-const useLegacyGlobe = new URLSearchParams(window.location.search).get('map') === 'globe'
-const MapStage = useLegacyGlobe ? GlobeStage : MapLibreStage
+// MapLibre is heavy; keep it out of the shell bundle and load it alongside the stage.
+const MapStage = lazy(() => import('./MapLibreStage'))
 
 type Props = {
   itinerary: Itinerary | null
