@@ -21,6 +21,7 @@ use faredesk_sources::ground::GroundClient;
 use faredesk_sources::kiwi::KiwiSource;
 use faredesk_sources::reference_data::ReferenceClient;
 use faredesk_sources::serpapi::SerpApiSource;
+use faredesk_sources::skiplagged::SkiplaggedSource;
 use faredesk_sources::transit::TransitClient;
 use faredesk_sources::Source;
 use faredesk_store::{Store, StoreError};
@@ -39,6 +40,7 @@ struct Inner {
     config: Config,
     fixtures: Option<Arc<Source>>,
     kiwi: Option<Arc<Source>>,
+    skiplagged: Option<Arc<SkiplaggedSource>>,
     serpapi: Option<Arc<Source>>,
     reference_client: ReferenceClient,
     climate_client: ClimateClient,
@@ -75,6 +77,7 @@ impl AppState {
                 config,
                 fixtures: fixtures.map(Arc::new),
                 kiwi: None,
+                skiplagged: None,
                 serpapi: serpapi.map(Arc::new),
                 reference_client: ReferenceClient::new(),
                 climate_client: ClimateClient::new(),
@@ -101,6 +104,13 @@ impl AppState {
             }
             Arc::new(Source::Kiwi(source))
         });
+        let skiplagged = config.skiplagged_enabled.then(|| {
+            let mut source = SkiplaggedSource::new(client.clone(), places.clone());
+            if let Some(url) = &config.skiplagged_url {
+                source = source.with_url(url);
+            }
+            Arc::new(source)
+        });
         let serpapi = config.serpapi_key.as_ref().map(|key| {
             let mut source = SerpApiSource::new(client.clone(), key, providers, places);
             if let Some(base_url) = &config.serpapi_base_url {
@@ -116,6 +126,7 @@ impl AppState {
                 config,
                 fixtures,
                 kiwi,
+                skiplagged,
                 serpapi,
                 reference_client: ReferenceClient::new(),
                 climate_client: ClimateClient::new(),
@@ -148,6 +159,11 @@ impl AppState {
         self.inner.kiwi.as_deref()
     }
 
+    /// Skiplagged: a second seller beside Kiwi.com, and the flex calendar.
+    pub fn skiplagged(&self) -> Option<&SkiplaggedSource> {
+        self.inner.skiplagged.as_deref()
+    }
+
     /// True when some live fare source can answer now.
     pub fn live_available(&self) -> bool {
         self.inner.kiwi.is_some() || self.inner.serpapi.is_some()
@@ -157,6 +173,7 @@ impl AppState {
     pub fn daily_limit(&self, source_id: &str) -> u32 {
         match source_id {
             "kiwi" => self.inner.config.kiwi_daily_limit,
+            "skiplagged" => self.inner.config.skiplagged_daily_limit,
             _ => self.inner.config.serpapi_daily_limit,
         }
     }
@@ -291,6 +308,7 @@ pub fn app(state: AppState) -> Router {
         .route("/route-intel", get(handlers::route_intel))
         .route("/seasonality", get(handlers::seasonality_feed))
         .route("/fare-weather", get(handlers::fare_weather_feed))
+        .route("/flex-calendar", get(handlers::flex_calendar))
         .route("/explore", get(handlers::explore))
         .route("/search", post(handlers::search))
         .route("/price-check", post(handlers::price_check))

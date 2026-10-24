@@ -71,6 +71,19 @@ pub fn data_cards(airports_updated_at: DateTime<Utc>, airports_source: String) -
             ],
         ),
         card(
+            "fares-skiplagged",
+            Dataset::Fares,
+            "Skiplagged (official MCP server)",
+            "Skiplagged terms of use",
+            "Standard nonstop fares from Skiplagged's public MCP server, no key, merged with Kiwi.com results; and the flex calendar of the cheapest fare per day. Prices are for the whole party, fetched at search time.",
+            release,
+            &[
+                "Hidden-city and self-transfer fares are excluded from search; connections are not shown because the source does not name the connection airport.",
+                "Bag terms are not provided; requested checked bags use the estimate table and are marked estimated.",
+                "The flex calendar is indicative and can include fare types that search excludes.",
+            ],
+        ),
+        card(
             "fares-serpapi",
             Dataset::Fares,
             "SerpAPI Google Flights",

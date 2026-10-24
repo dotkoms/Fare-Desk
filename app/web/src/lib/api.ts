@@ -247,3 +247,16 @@ export async function getRouteIntel(
   const params = new URLSearchParams({ from, to, date })
   return request(`/api/route-intel?${params}`, { signal })
 }
+
+export type FlexDay = { date: string; price: number }
+
+/** Cheapest fare per departure day around `date`, from Skiplagged. Indicative. */
+export async function getFlexCalendar(
+  from: string,
+  to: string,
+  date: string,
+  signal?: AbortSignal,
+): Promise<{ currency: string; days: FlexDay[] }> {
+  const params = new URLSearchParams({ from, to, date })
+  return request(`/api/flex-calendar?${params}`, { signal })
+}

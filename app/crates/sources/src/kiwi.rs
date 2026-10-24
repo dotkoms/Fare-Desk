@@ -16,7 +16,7 @@ use faredesk_core::{Bags, Cabin, FareRules, Offer, Place, Segment};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::{ResolvedQuery, SourceError};
+use crate::{mcp, ResolvedQuery, SourceError};
 
 pub const DEFAULT_URL: &str = "https://mcp.kiwi.com/";
 
@@ -50,36 +50,17 @@ impl KiwiSource {
     }
 
     pub async fn search(&self, query: &ResolvedQuery<'_>) -> Result<Vec<Offer>, SourceError> {
-        let request = json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/call",
-            "params": { "name": "search-flight", "arguments": arguments(query) },
-        });
-
-        let response = self
-            .client
-            .post(&self.url)
-            .header("accept", "application/json, text/event-stream")
-            .json(&request)
-            .timeout(std::time::Duration::from_secs(60))
-            .send()
-            .await
-            .map_err(|error| SourceError::Unavailable(format!("kiwi request failed: {error}")))?;
-
-        let status = response.status();
-        let body = response
-            .text()
-            .await
-            .map_err(|error| SourceError::Unavailable(format!("kiwi response: {error}")))?;
-        if !status.is_success() {
-            let snippet: String = body.chars().take(200).collect();
-            return Err(SourceError::Unavailable(format!(
-                "kiwi returned {status}: {snippet}"
-            )));
-        }
-
-        let result = parse_rpc(&body)?;
+        let structured = mcp::call_tool(
+            &self.client,
+            &self.url,
+            "kiwi",
+            "search-flight",
+            arguments(query),
+            60,
+        )
+        .await?;
+        let result: KiwiResult = serde_json::from_value(structured)
+            .map_err(|error| SourceError::Parse(format!("kiwi itineraries: {error}")))?;
         if let Some(error) = result.error.filter(|error| !error.is_empty()) {
             return Err(SourceError::InvalidRequest(format!("kiwi: {error}")));
         }
@@ -209,40 +190,10 @@ fn arguments(query: &ResolvedQuery<'_>) -> Value {
     arguments
 }
 
-/// Read the JSON-RPC result from a plain JSON body or a server-sent event stream.
+/// Parse a whole response body into Kiwi's result (tests feed recorded bodies).
+#[cfg(test)]
 fn parse_rpc(body: &str) -> Result<KiwiResult, SourceError> {
-    let payload = body
-        .lines()
-        .filter_map(|line| line.strip_prefix("data:"))
-        .map(str::trim)
-        .find(|data| data.starts_with('{'))
-        .unwrap_or(body.trim());
-    let envelope: Value = serde_json::from_str(payload)
-        .map_err(|error| SourceError::Parse(format!("kiwi response is not JSON: {error}")))?;
-    if let Some(error) = envelope.get("error") {
-        return Err(SourceError::Unavailable(format!("kiwi error: {error}")));
-    }
-    let result = envelope
-        .get("result")
-        .ok_or_else(|| SourceError::Parse("kiwi response has no result".into()))?;
-    if result.get("isError").and_then(Value::as_bool) == Some(true) {
-        let message = result
-            .pointer("/content/0/text")
-            .and_then(Value::as_str)
-            .unwrap_or("search failed");
-        return Err(SourceError::InvalidRequest(format!("kiwi: {message}")));
-    }
-    let structured = match result.get("structuredContent") {
-        Some(value) => value.clone(),
-        None => {
-            let text = result
-                .pointer("/content/0/text")
-                .and_then(Value::as_str)
-                .ok_or_else(|| SourceError::Parse("kiwi result has no content".into()))?;
-            serde_json::from_str(text)
-                .map_err(|error| SourceError::Parse(format!("kiwi content: {error}")))?
-        }
-    };
+    let structured = mcp::structured_result(body, "kiwi")?;
     serde_json::from_value(structured)
         .map_err(|error| SourceError::Parse(format!("kiwi itineraries: {error}")))
 }

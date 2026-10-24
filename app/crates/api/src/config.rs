@@ -15,6 +15,11 @@ pub struct Config {
     pub kiwi_url: Option<String>,
     /// A politeness cap on Kiwi searches per day; Kiwi itself meters nothing.
     pub kiwi_daily_limit: u32,
+    /// Skiplagged's public MCP server, no key: a second seller's nonstop prices and
+    /// the flex calendar. On in a real run (`SKIPLAGGED=off` disables); off in tests.
+    pub skiplagged_enabled: bool,
+    pub skiplagged_url: Option<String>,
+    pub skiplagged_daily_limit: u32,
     pub cors_origins: Vec<String>,
     /// Requests per client per minute. 0 disables the limiter.
     pub rate_limit_per_minute: u32,
@@ -37,6 +42,9 @@ impl Default for Config {
             kiwi_enabled: false,
             kiwi_url: None,
             kiwi_daily_limit: 1000,
+            skiplagged_enabled: false,
+            skiplagged_url: None,
+            skiplagged_daily_limit: 1000,
             rate_limit_per_minute: 120,
             ground_routing: true,
             transit_routing: true,
@@ -87,6 +95,18 @@ impl Config {
                 .ok()
                 .and_then(|value| value.parse().ok())
                 .unwrap_or(defaults.kiwi_daily_limit),
+            skiplagged_enabled: !matches!(
+                std::env::var("SKIPLAGGED").ok().as_deref().map(str::trim),
+                Some("off" | "false" | "0")
+            ),
+            skiplagged_url: std::env::var("SKIPLAGGED_MCP_URL")
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty()),
+            skiplagged_daily_limit: std::env::var("SKIPLAGGED_DAILY_LIMIT")
+                .ok()
+                .and_then(|value| value.parse().ok())
+                .unwrap_or(defaults.skiplagged_daily_limit),
             cors_origins: std::env::var("CORS_ORIGINS")
                 .ok()
                 .map(|value| {

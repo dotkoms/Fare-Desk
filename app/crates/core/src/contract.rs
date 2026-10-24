@@ -667,6 +667,26 @@ pub struct ExploreCoverage {
     pub attempted: usize,
 }
 
+/// One day of a flex-date calendar: the cheapest one-way fare departing that day.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlexDay {
+    pub date: NaiveDate,
+    pub price: f64,
+}
+
+/// The cheapest fare per departure day around a date. Indicative: the source
+/// computes it over every fare type it sells, including ones search excludes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlexCalendarResponse {
+    pub origin: Place,
+    pub destination: Place,
+    pub currency: String,
+    pub days: Vec<FlexDay>,
+    pub provenance: Provenance,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExploreResponse {

@@ -138,6 +138,15 @@ pub async fn health(State(state): State<AppState>) -> Json<Health> {
                 used_today: serpapi_used,
             },
             SourceHealth {
+                id: "skiplagged",
+                configured: state.skiplagged().is_some(),
+                live: true,
+                daily_limit: state.skiplagged().map(|_| config.skiplagged_daily_limit),
+                used_today: state
+                    .skiplagged()
+                    .and_then(|_| state.store().db.quota_used("skiplagged", today).ok()),
+            },
+            SourceHealth {
                 id: "kiwi",
                 configured: state.kiwi().is_some(),
                 live: true,
@@ -360,6 +369,7 @@ pub async fn route_intel(
             p10: p10.unwrap_or(current),
             p50: median.unwrap_or(current),
             sample_size,
+            currency: &currency,
         })
     });
 
@@ -683,9 +693,58 @@ async fn search_direction(
         destination,
     };
 
-    let offers = match source.search(&resolved).await {
-        Ok(offers) => offers,
-        Err(error) => {
+    // Beside Kiwi.com, ask Skiplagged for the same flights at the same time; the
+    // merge keeps the cheaper seller for a service both list.
+    let companion = match state.skiplagged() {
+        Some(skiplagged) if source.id() == "kiwi" => {
+            let today = now().date_naive();
+            match state.store().db.consume_quota(
+                "skiplagged",
+                today,
+                state.daily_limit("skiplagged"),
+            ) {
+                Ok(QuotaOutcome::Granted { .. }) => Some(skiplagged),
+                _ => None,
+            }
+        }
+        _ => None,
+    };
+    let (primary, secondary) = tokio::join!(source.search(&resolved), async {
+        match companion {
+            Some(skiplagged) => Some(skiplagged.search(&resolved).await),
+            None => None,
+        }
+    });
+
+    let mut source_notes: Vec<String> = Vec::new();
+    let mut degraded_reason: Option<String> = None;
+    let offers = match (primary, secondary) {
+        (Ok(mut offers), secondary) => {
+            match secondary {
+                Some(Ok(extra)) => {
+                    if !extra.is_empty() {
+                        source_notes.push(format!(
+                            "Also priced on Skiplagged: {} standard nonstop fare{}.",
+                            extra.len(),
+                            if extra.len() == 1 { "" } else { "s" }
+                        ));
+                    }
+                    offers.extend(extra);
+                }
+                Some(Err(error)) => {
+                    source_notes.push(format!("Skiplagged was not available ({error})."));
+                }
+                None => {}
+            }
+            offers
+        }
+        (Err(error), Some(Ok(extra))) if !extra.is_empty() => {
+            degraded_reason = Some(format!(
+                "Kiwi.com failed ({error}); showing Skiplagged's nonstop fares only."
+            ));
+            extra
+        }
+        (Err(error), _) => {
             if let Some(stale) = state.store().search_cache.get_stale(&key) {
                 return Ok(response_from_snapshot(
                     &query,
@@ -745,13 +804,14 @@ async fn search_direction(
                 today,
                 itinerary.total_price,
                 &itinerary.currency,
-                source.id(),
+                &itinerary.source,
                 &itinerary.id,
             );
         }
     }
 
-    let notes = notes_for(&query, live, dropped, &itineraries);
+    let mut notes = notes_for(&query, live, dropped, &itineraries);
+    notes.extend(source_notes);
     let observed_at = now();
     let ttl = state.config().search_cache_ttl;
     let snapshot = SearchSnapshot {
@@ -772,6 +832,10 @@ async fn search_direction(
     provenance.observed_at = observed_at;
     provenance.expires_at = Some(observed_at + ttl_duration(ttl));
     provenance.notes = notes;
+    if let Some(reason) = degraded_reason {
+        provenance.degraded = true;
+        provenance.degraded_reason = Some(reason);
+    }
 
     Ok(SearchResponse {
         query,
@@ -2301,7 +2365,7 @@ pub async fn reliability(
     }
     if let Some(price) = params.price {
         provenance.notes.push(format!(
-            "Adjusted price = €{price} divided by the carrier's on-time rate; rates below 50% are not priced."
+            "Adjusted price = {price} divided by the carrier's on-time rate, in the fare's currency; rates below 50% are not priced."
         ));
     }
 
@@ -2512,4 +2576,89 @@ fn parse_dataset(value: &str) -> Option<Dataset> {
         "meta" => Some(Dataset::Meta),
         _ => None,
     }
+}
+
+// ---------------------------------------------------------------------------
+// Flex calendar
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Deserialize)]
+pub struct FlexCalendarParams {
+    pub from: Option<String>,
+    pub to: Option<String>,
+    pub date: Option<NaiveDate>,
+}
+
+/// The cheapest one-way fare per departure day around a date, from Skiplagged.
+pub async fn flex_calendar(
+    State(state): State<AppState>,
+    Query(params): Query<FlexCalendarParams>,
+) -> Result<Json<faredesk_core::FlexCalendarResponse>, ApiError> {
+    let (Some(from), Some(to), Some(date)) = (params.from, params.to, params.date) else {
+        return Err(ApiError::bad_request(
+            "missing_query",
+            "Give from, to and date, e.g. /api/flex-calendar?from=JFK&to=LAX&date=2027-01-15.",
+        ));
+    };
+    let origin = resolve_place(&state, &from)?;
+    let destination = resolve_place(&state, &to)?;
+    let skiplagged = state.skiplagged().ok_or_else(|| {
+        ApiError::bad_request(
+            "source_not_configured",
+            "The flex calendar needs Skiplagged, which is turned off (SKIPLAGGED=off).",
+        )
+    })?;
+
+    let key = format!("flex:{}:{}:{date}", origin.code, destination.code);
+    let mut provenance = base_provenance("fares-skiplagged", "skiplagged", 0);
+    provenance.notes.push(
+        "Indicative: Skiplagged's cheapest fare per day across all its fare types, which can include hidden-city tickets that search excludes. Search a day to see bookable fares."
+            .to_string(),
+    );
+
+    let days = if let Some(cached) = state.store().flex_cache.get(&key) {
+        provenance.freshness = Freshness::Cached;
+        cached.value
+    } else {
+        match state.store().db.consume_quota(
+            "skiplagged",
+            now().date_naive(),
+            state.daily_limit("skiplagged"),
+        ) {
+            Ok(QuotaOutcome::Granted { .. }) => {}
+            Ok(QuotaOutcome::Exhausted { reset_on, .. }) => {
+                return Err(ApiError::quota_exhausted(
+                    "The daily Skiplagged cap is reached. Try again tomorrow.",
+                    reset_on.format("%Y-%m-%d").to_string(),
+                ));
+            }
+            Err(error) => return Err(ApiError::internal(format!("quota ledger: {error}"))),
+        }
+        let days = skiplagged
+            .flex_calendar(&origin.code, &destination.code, date)
+            .await
+            .map_err(|error| match error {
+                SourceError::InvalidRequest(message) => {
+                    ApiError::bad_request("source_rejected", message)
+                }
+                other => ApiError::unavailable(other.to_string()),
+            })?;
+        // Six hours: the calendar is for picking a day, not for quoting.
+        state.store().flex_cache.insert(
+            key,
+            days.clone(),
+            std::time::Duration::from_secs(6 * 60 * 60),
+        );
+        provenance.freshness = Freshness::Live;
+        days
+    };
+    provenance.sample_size = days.len();
+
+    Ok(Json(faredesk_core::FlexCalendarResponse {
+        origin,
+        destination,
+        currency: "USD".to_string(),
+        days,
+        provenance,
+    }))
 }

@@ -396,7 +396,10 @@ async fn data_cards_expose_every_source() {
         .iter()
         .map(|card| card["id"].as_str().unwrap())
         .collect();
-    assert_eq!(fares, vec!["fares-kiwi", "fares-serpapi"]);
+    assert_eq!(
+        fares,
+        vec!["fares-kiwi", "fares-skiplagged", "fares-serpapi"]
+    );
 
     let (status, _) = call(app(state()), "GET", "/api/data-card?dataset=nope", None).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -1368,4 +1371,122 @@ async fn kiwi_answers_by_default_with_no_key() {
         .unwrap();
     assert_eq!(kiwi["configured"], true);
     assert_eq!(kiwi["usedToday"], 2, "{health}");
+}
+
+/// A stand-in for Skiplagged's MCP server: one standard nonstop that undercuts
+/// the mock Kiwi fare, one hidden-city fare that must be ignored, and a calendar.
+async fn mock_skiplagged() -> String {
+    use axum::routing::post;
+
+    async fn handler(axum::Json(request): axum::Json<Value>) -> impl axum::response::IntoResponse {
+        let tool = request["params"]["name"].as_str().unwrap().to_string();
+        let args = &request["params"]["arguments"];
+        let structured = if tool == "sk_flex_departure_calendar" {
+            json!({ "chart": { "points": [
+                { "departure": "2027-01-14", "price": 151 },
+                { "departure": "2027-01-15", "price": 129 }
+            ] } })
+        } else {
+            let from = args["origin"].as_str().unwrap();
+            let to = args["destination"].as_str().unwrap();
+            let date = args["departureDate"].as_str().unwrap();
+            let card = |id: &str, price: f64, attribute: &str| {
+                json!({
+                    "type": "FlightCard", "id": format!("{from}-{to}-{date}-trip={id}~"),
+                    "airlines": "Delta Air Lines",
+                    "departure": { "airport": from, "dateTime": format!("{date}T07:00:00-05:00") },
+                    "arrival": { "airport": to, "dateTime": format!("{date}T10:15:00-08:00") },
+                    "layovers": 0, "price": { "amount": price, "currency": "USD" },
+                    "deepLink": "https://skiplagged.com/x", "attributes": [attribute, "nonstop"]
+                })
+            };
+            json!({ "flights": [card("DL742", 199.0, "standard"), card("DL900", 99.0, "hidden-city")] })
+        };
+        let envelope =
+            json!({ "jsonrpc": "2.0", "id": 1, "result": { "structuredContent": structured } });
+        (
+            [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
+            format!("event: message\ndata: {envelope}\n\n"),
+        )
+    }
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, axum::Router::new().route("/mcp", post(handler)))
+            .await
+            .unwrap();
+    });
+    format!("http://{addr}/mcp")
+}
+
+fn kiwi_and_skiplagged_state(kiwi: String, skiplagged: String) -> AppState {
+    AppState::in_memory(Config {
+        ground_routing: false,
+        transit_routing: false,
+        kiwi_enabled: true,
+        kiwi_url: Some(kiwi),
+        skiplagged_enabled: true,
+        skiplagged_url: Some(skiplagged),
+        ..Config::default()
+    })
+    .expect("state")
+}
+
+#[tokio::test]
+async fn search_merges_skiplagged_nonstops_and_skips_hidden_city() {
+    let state = kiwi_and_skiplagged_state(mock_kiwi().await, mock_skiplagged().await);
+    let mut body = search_body("JFK", "LAX");
+    body["currency"] = json!("USD");
+    let (status, body) = call(app(state.clone()), "POST", "/api/search", Some(body)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let sellers: Vec<(&str, f64)> = body["itineraries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| {
+            (
+                i["providerName"].as_str().unwrap(),
+                i["totalPrice"].as_f64().unwrap(),
+            )
+        })
+        .collect();
+    assert!(sellers.contains(&("Kiwi.com", 300.0)), "{sellers:?}");
+    assert!(sellers.contains(&("Skiplagged", 199.0)), "{sellers:?}");
+    assert!(
+        !sellers.iter().any(|(_, price)| *price == 99.0),
+        "hidden-city leaked: {sellers:?}"
+    );
+    assert!(body["provenance"]["notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|note| note.as_str().unwrap().contains("Also priced on Skiplagged")));
+
+    let (_, health) = call(app(state), "GET", "/healthz", None).await;
+    let used = |id: &str| {
+        health["sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|source| source["id"] == id)
+            .unwrap()["usedToday"]
+            .clone()
+    };
+    assert_eq!(used("kiwi"), 1);
+    assert_eq!(used("skiplagged"), 1);
+}
+
+#[tokio::test]
+async fn flex_calendar_lists_the_cheapest_fare_per_day() {
+    let state = kiwi_and_skiplagged_state(mock_kiwi().await, mock_skiplagged().await);
+    let uri = "/api/flex-calendar?from=JFK&to=LAX&date=2027-01-15";
+    let (status, body) = call(app(state.clone()), "GET", uri, None).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["currency"], "USD");
+    assert_eq!(body["days"][1]["date"], "2027-01-15");
+    assert_eq!(body["days"][1]["price"], 129.0);
+    assert_eq!(body["provenance"]["freshness"], "live");
+    let (_, again) = call(app(state), "GET", uri, None).await;
+    assert_eq!(again["provenance"]["freshness"], "cached");
 }

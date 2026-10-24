@@ -63,7 +63,10 @@ impl TransitClient {
         let itinerary = payload
             .itineraries
             .first()
-            .ok_or_else(|| SourceError::Parse("transitous returned no itinerary".into()))?;
+            // Transitous answers but has no route: its feeds do not cover this area.
+            .ok_or_else(|| {
+                SourceError::Unavailable("Transitous has no public-transit route here".into())
+            })?;
         Ok(TransitLeg {
             minutes: ((itinerary.duration / 60.0).ceil() as u32).max(1),
             transfers: itinerary.transfers,

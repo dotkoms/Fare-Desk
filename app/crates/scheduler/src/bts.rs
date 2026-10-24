@@ -150,6 +150,19 @@ pub fn ingest_zip(path: &Path, db: &Db) -> Result<IngestReport, BtsError> {
     Ok(IngestReport::from_rows(&rows))
 }
 
+/// An error with every cause behind it; reqwest's top-level text alone
+/// ("error sending request") hides whether it was DNS, TLS or a timeout.
+fn error_chain(error: &dyn std::error::Error) -> String {
+    let mut message = error.to_string();
+    let mut source = error.source();
+    while let Some(cause) = source {
+        message.push_str(": ");
+        message.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    message
+}
+
 pub async fn download_month(year: i32, month: u32) -> Result<PathBuf, BtsError> {
     let url = format!(
         "https://transtats.bts.gov/PREZIP/On_Time_Reporting_Carrier_On_Time_Performance_1987_present_{year}_{month}.zip"
@@ -162,7 +175,7 @@ pub async fn download_month(year: i32, month: u32) -> Result<PathBuf, BtsError> 
         .get(&url)
         .send()
         .await
-        .map_err(|error| BtsError::Http(error.to_string()))?;
+        .map_err(|error| BtsError::Http(error_chain(&error)))?;
     if !response.status().is_success() {
         return Err(BtsError::Http(format!(
             "transtats returned {}",
@@ -172,7 +185,7 @@ pub async fn download_month(year: i32, month: u32) -> Result<PathBuf, BtsError> 
     let bytes = response
         .bytes()
         .await
-        .map_err(|error| BtsError::Http(error.to_string()))?;
+        .map_err(|error| BtsError::Http(error_chain(&error)))?;
     let path = std::env::temp_dir().join(format!("bts-on-time-{year}-{month}.zip"));
     std::fs::write(&path, bytes)?;
     Ok(path)

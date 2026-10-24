@@ -6,8 +6,10 @@ pub mod climate;
 pub mod fixtures;
 pub mod ground;
 pub mod kiwi;
+pub mod mcp;
 pub mod reference_data;
 pub mod serpapi;
+pub mod skiplagged;
 pub mod transit;
 
 use chrono::NaiveDate;

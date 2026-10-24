@@ -79,6 +79,7 @@ function ResultCard({
         </div>
 
         <div className="result-tags">
+          <span className="tag-seller">{itinerary.provider}</span>
           {itinerary.verifiedMinutesAgo === null ? (
             <span className="tag-unverified">Not verified</span>
           ) : (

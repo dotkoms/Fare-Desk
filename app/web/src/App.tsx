@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import DataBadge from './components/DataBadge'
 import Results from './components/Results'
+import FlexStrip from './components/FlexStrip'
 import SearchPanel from './components/SearchPanel'
 import Stage from './components/Stage'
 import { searchFlights, type Provenance } from './lib/api'
@@ -136,6 +137,25 @@ export default function App() {
             setTab('itinerary')
           }}
         />
+
+        {!showingReturns ? (
+          <FlexStrip
+            origin={activeQuery.origin}
+            destination={activeQuery.destination}
+            date={activeQuery.depart}
+            currency={activeQuery.currency}
+            onPick={(date) => {
+              // Keep the trip length when the departure moves.
+              const length = (Date.parse(activeQuery.returnDate) - Date.parse(activeQuery.depart)) / 86_400_000
+              const back = new Date(Date.parse(date) + length * 86_400_000).toISOString().slice(0, 10)
+              const next = { ...activeQuery, depart: date, returnDate: back }
+              setQuery(next)
+              setActiveQuery(next)
+              setSelectedId(null)
+              setSelectedReturnId(null)
+            }}
+          />
+        ) : null}
 
         <Results
           itineraries={showingReturns ? sortedReturns : sorted}

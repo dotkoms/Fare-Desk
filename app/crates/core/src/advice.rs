@@ -31,6 +31,8 @@ pub struct AdviceInput<'a> {
     pub p50: f64,
     /// Observations for this travel date.
     pub sample_size: usize,
+    /// The currency the history was recorded in, for the sentences we write.
+    pub currency: &'a str,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -122,8 +124,8 @@ pub fn advise(input: &AdviceInput<'_>) -> Advice {
         backtest: backtest(input.observations),
         reasons,
         change_my_mind: format!(
-            "A new sale bucket, a schedule change, or a fare below €{:.0}.",
-            input.p10
+            "A new sale bucket, a schedule change, or a fare below {:.0} {}.",
+            input.p10, input.currency
         ),
     }
 }
@@ -333,6 +335,7 @@ mod tests {
             p10,
             p50,
             sample_size: sample,
+            currency: "EUR",
         }
     }
 

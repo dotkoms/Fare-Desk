@@ -28,7 +28,7 @@ cp .env.example .env          # optional; every value has a default
 cargo run -p faredesk-api
 ```
 
-The service listens on `http://127.0.0.1:8080` and serves **live fares on first run with no key and no signup**: `/api/search` uses Kiwi.com's official public MCP server (`mcp.kiwi.com`). `scripts/live-check.sh` proves the live path in three searches. `KIWI=off` turns it off; SerpAPI remains available only when a request asks for `source=serpapi` and `SERPAPI_KEY` is set. The server binary contains no demo fares; the fixture inventory in `crates/sources/src/fixtures.rs` compiles only for tests (`test-fixtures` feature).
+The service listens on `http://127.0.0.1:8080` and serves **live fares on first run with no key and no signup**: `/api/search` uses Kiwi.com's official public MCP server (`mcp.kiwi.com`) and merges standard nonstop fares from Skiplagged's (`mcp.skiplagged.com`); `/api/flex-calendar` gives the cheapest fare per day. Source status and the plan for more: [docs/25](../docs/25-data-sources-status.md). `scripts/live-check.sh` proves the live path in three searches. `KIWI=off` turns it off; SerpAPI remains available only when a request asks for `source=serpapi` and `SERPAPI_KEY` is set. The server binary contains no demo fares; the fixture inventory in `crates/sources/src/fixtures.rs` compiles only for tests (`test-fixtures` feature).
 
 The web app calls this service through the Vite dev proxy. If it is not running, the app shows an error; it has no fallback data.
 
@@ -50,6 +50,7 @@ curl -s -X POST "http://127.0.0.1:8080/api/search" \
 | `GET` | `/api/route-intel?from=&to=&date=` | Daily minima, p10/p50/p90, current percentile, sample and observation window |
 | `GET` | `/api/seasonality?from=&to=` | Median, p10 and p90 per travel month |
 | `GET` | `/api/fare-weather?from=&to=&date=` | Volatility: coefficient of variation, last-seven range, drop frequency, classification |
+| `GET` | `/api/flex-calendar?from=&to=&date=` | Cheapest fare per departure day around a date (Skiplagged; indicative) |
 | `GET` | `/api/explore?home=&month=` | Cheapest destinations from a home airport for a month, with coverage |
 | `POST` | `/api/search` | Priced, deduplicated, ranked itineraries with provenance |
 | `POST` | `/api/price-check` | Storefront screen: eligibility, net totals with FX, status labels and a recommendation |

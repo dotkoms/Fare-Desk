@@ -46,6 +46,7 @@ pub struct Store {
     pub climate_cache: TimedCache<Vec<ClimateMonth>>,
     pub ground_cache: TimedCache<GroundLeg>,
     pub transit_cache: TimedCache<TransitLeg>,
+    pub flex_cache: TimedCache<Vec<faredesk_core::FlexDay>>,
     cards: Vec<DataCard>,
 }
 
@@ -65,6 +66,7 @@ impl Store {
             climate_cache: TimedCache::new(CACHE_CAPACITY),
             ground_cache: TimedCache::new(CACHE_CAPACITY),
             transit_cache: TimedCache::new(CACHE_CAPACITY),
+            flex_cache: TimedCache::new(CACHE_CAPACITY),
             cards,
         })
     }
@@ -84,6 +86,7 @@ impl Store {
             climate_cache: TimedCache::new(CACHE_CAPACITY),
             ground_cache: TimedCache::new(CACHE_CAPACITY),
             transit_cache: TimedCache::new(CACHE_CAPACITY),
+            flex_cache: TimedCache::new(CACHE_CAPACITY),
             cards,
         })
     }

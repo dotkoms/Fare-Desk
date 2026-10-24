@@ -66,7 +66,7 @@ async fn main() -> ExitCode {
 
     let path = match args.file {
         Some(path) => path,
-        None => match download_month(args.year, args.month).await {
+        None => match download_with_retries(args.year, args.month).await {
             Ok(path) => path,
             Err(error) => {
                 eprintln!(
@@ -89,6 +89,26 @@ async fn main() -> ExitCode {
         Err(error) => {
             eprintln!("ingest failed for {}: {error}", path.display());
             ExitCode::from(1)
+        }
+    }
+}
+
+/// The monthly file is ~30 MB from a government host that drops connections now
+/// and then; three tries with a pause beats failing the month.
+async fn download_with_retries(
+    year: i32,
+    month: u32,
+) -> Result<std::path::PathBuf, faredesk_scheduler::bts::BtsError> {
+    let mut attempt = 1;
+    loop {
+        match download_month(year, month).await {
+            Ok(path) => return Ok(path),
+            Err(error) if attempt < 3 => {
+                eprintln!("BTS {year}-{month}: attempt {attempt} failed ({error}); retrying");
+                tokio::time::sleep(std::time::Duration::from_secs(10 * attempt)).await;
+                attempt += 1;
+            }
+            Err(error) => return Err(error),
         }
     }
 }
