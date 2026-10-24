@@ -28,7 +28,7 @@ cp .env.example .env          # optional; every value has a default
 cargo run -p faredesk-api
 ```
 
-The service listens on `http://127.0.0.1:8080`. Fares need `SERPAPI_KEY`: without it, `/api/search` and `/api/explore` answer `400 source_not_configured`. The server binary contains no demo fares; the fixture inventory in `crates/sources/src/fixtures.rs` compiles only for tests (`test-fixtures` feature).
+The service listens on `http://127.0.0.1:8080`. Fares need `SERPAPI_KEY`: without it, `/api/search` and `/api/explore` answer `400 source_not_configured`. Put the key in `app/.env` (gitignored, loaded at startup), then `scripts/live-check.sh` proves the live path with three metered searches. The server binary contains no demo fares; the fixture inventory in `crates/sources/src/fixtures.rs` compiles only for tests (`test-fixtures` feature).
 
 The web app calls this service through the Vite dev proxy. If it is not running, the app shows an error; it has no fallback data.
 

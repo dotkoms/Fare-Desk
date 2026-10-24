@@ -8,6 +8,27 @@ This plan takes it from "nothing" to "real data on every surface", in order of w
 
 ---
 
+## 0. Game plan: live fares this week
+
+The code path is built and tested end to end against a SerpAPI stand-in (`app/scripts/live-check.sh`). What is missing is a key, a budget and a corridor. In order:
+
+| # | Step | Who | Done when |
+|---|---|---|---|
+| 1 | Create a SerpAPI account; start on the free tier (250 searches/month) | Owner | A key exists |
+| 2 | Put it in `app/.env` (gitignored, loaded at startup): `SERPAPI_KEY=…` and `SERPAPI_DAILY_LIMIT=8` for the free tier | Owner | The file exists; the key is never committed or pasted in chat |
+| 3 | Restart the data plane (`cd app && cargo run -p faredesk-api`) | Owner or Claude | `/healthz` shows `serpapi.configured: true` |
+| 4 | Run `app/scripts/live-check.sh` (3 searches) | Claude | It prints `PASS` against Google Flights data |
+| 5 | Search in the web app; check prices against google.com/travel/flights for the same date | Owner | Totals match within bags and currency |
+| 6 | Fix what real responses break (unknown connection airports, bag text, odd times) | Claude | Itineraries drop only with a logged reason |
+| 7 | Choose the corridor; write `data/watchlist.yaml`; schedule the collector daily | Owner + Claude | `fare_history` grows by one row per route per day |
+| 8 | Buy the plan that fits §3 and raise `SERPAPI_DAILY_LIMIT` | Owner | Collector and users fit inside the daily limit |
+| 9 | Day 14: first verdicts on corridor routes | — | When to buy leaves "Collecting baseline" |
+
+Steps 1–6 take an afternoon on the free tier. Step 7 is where the budget starts to matter: 30 routes a day is 900 searches a month, beyond the free tier.
+
+
+---
+
 ## 1. What is real, what is missing
 
 | Surface | Data today | Real? | What it needs |
