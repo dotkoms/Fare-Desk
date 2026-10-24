@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use tower::ServiceExt;
 
 use faredesk_api::{app, search_cache_key, AppState, Config};
-use faredesk_core::{ClimateMonth, SearchQuery, SearchSnapshot};
+use faredesk_core::{ClimateMonth, ReliabilityCount, SearchQuery, SearchSnapshot};
 use faredesk_sources::fixtures::FixtureSource;
 use faredesk_sources::Source;
 
@@ -916,4 +916,158 @@ async fn door_to_door_requires_a_date() {
     .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"]["code"], "missing_date");
+}
+
+#[tokio::test]
+async fn reliability_aggregates_carriers_and_adjusts_the_price() {
+    let state = state();
+    let day = NaiveDate::from_ymd_opt(2025, 12, 1).unwrap();
+    state
+        .store()
+        .db
+        .record_reliability(&[
+            ReliabilityCount {
+                origin: "JFK".into(),
+                dest: "LAX".into(),
+                carrier: "AA".into(),
+                month: "2025-12".into(),
+                flights: 100,
+                on_time: 80,
+                first_date: day,
+                last_date: day,
+            },
+            ReliabilityCount {
+                origin: "JFK".into(),
+                dest: "LAX".into(),
+                carrier: "UA".into(),
+                month: "2025-12".into(),
+                flights: 50,
+                on_time: 45,
+                first_date: day,
+                last_date: day,
+            },
+        ])
+        .unwrap();
+
+    let (status, body) = call(
+        app(state),
+        "GET",
+        "/api/reliability?from=JFK&to=LAX&price=300",
+        None,
+    )
+    .await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["route"], "JFK-LAX");
+    let carriers = body["carriers"].as_array().unwrap();
+    assert_eq!(carriers.len(), 2);
+    // Sorted by adjusted price: UA 300/0.9 = 333.33 before AA 300/0.8 = 375.
+    assert_eq!(carriers[0]["carrier"], "UA");
+    assert_eq!(carriers[0]["onTimeRate"], 0.9);
+    assert_eq!(carriers[0]["adjustedPrice"], 333.33);
+    assert_eq!(carriers[1]["carrier"], "AA");
+    assert_eq!(carriers[1]["adjustedPrice"], 375.0);
+    assert_eq!(body["provenance"]["dataCardId"], "reliability-bts");
+    assert_eq!(body["provenance"]["sampleSize"], 150);
+}
+
+#[tokio::test]
+async fn reliability_is_empty_with_a_note_without_ingested_data() {
+    let (status, body) = call(
+        app(state()),
+        "GET",
+        "/api/reliability?from=BER&to=LIS",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["carriers"].as_array().unwrap().len(), 0);
+    assert!(body["provenance"]["notes"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|note| note.as_str().unwrap().contains("No BTS reliability data")));
+}
+
+#[tokio::test]
+async fn alerts_create_list_and_delete() {
+    let state = state();
+    let body = json!({
+        "email": "Traveler@Example.com",
+        "origin": "BER",
+        "destination": "LIS",
+        "travelDate": depart_date(),
+        "threshold": 100
+    });
+
+    let (status, created) = call(app(state.clone()), "POST", "/api/alerts", Some(body)).await;
+    assert_eq!(status, StatusCode::OK, "{created}");
+    assert_eq!(created["email"], "traveler@example.com");
+    assert_eq!(created["route"], "BER-LIS");
+    assert_eq!(created["threshold"], 100.0);
+    let id = created["id"].as_i64().unwrap();
+
+    let (status, listed) = call(
+        app(state.clone()),
+        "GET",
+        "/api/alerts?email=traveler@example.com",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(listed["watches"].as_array().unwrap().len(), 1);
+    assert_eq!(listed["alerts"].as_array().unwrap().len(), 0);
+
+    let (status, deleted) = call(
+        app(state.clone()),
+        "DELETE",
+        &format!("/api/alerts/{id}?email=traveler@example.com"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(deleted["deleted"], true);
+
+    let (status, _) = call(
+        app(state.clone()),
+        "DELETE",
+        &format!("/api/alerts/{id}?email=traveler@example.com"),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    let (status, listed) = call(
+        app(state),
+        "GET",
+        "/api/alerts?email=traveler@example.com",
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(listed["watches"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn alerts_validate_the_email_and_threshold() {
+    let body = json!({
+        "email": "not-an-email",
+        "origin": "BER",
+        "destination": "LIS",
+        "travelDate": depart_date()
+    });
+    let (status, error) = call(app(state()), "POST", "/api/alerts", Some(body)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(error["error"]["code"], "invalid_email");
+
+    let body = json!({
+        "email": "a@example.com",
+        "origin": "BER",
+        "destination": "LIS",
+        "travelDate": depart_date(),
+        "threshold": -5
+    });
+    let (status, error) = call(app(state()), "POST", "/api/alerts", Some(body)).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(error["error"]["code"], "invalid_threshold");
 }

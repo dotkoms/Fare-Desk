@@ -14,8 +14,17 @@ path = "src/lib.rs"
 name = "faredesk-collector"
 path = "src/main.rs"
 
+[[bin]]
+name = "faredesk-bts-ingest"
+path = "src/bts_main.rs"
+
+[[bin]]
+name = "faredesk-alerts"
+path = "src/alerts_main.rs"
+
 [dependencies]
 chrono.workspace = true
+csv = "1"
 dotenvy.workspace = true
 faredesk-core = { path = "../core" }
 faredesk-sources = { path = "../sources" }
@@ -24,6 +33,7 @@ reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 serde_yml = "0.0.12"
+zip = "0.6"
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true

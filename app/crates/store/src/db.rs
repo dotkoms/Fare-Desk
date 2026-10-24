@@ -10,6 +10,37 @@ pub enum DbError {
     Sqlite(#[from] rusqlite::Error),
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct Watch {
+    pub id: i64,
+    pub email: String,
+    pub route: String,
+    pub travel_date: NaiveDate,
+    pub threshold: Option<f64>,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AlertRow {
+    pub id: i64,
+    pub email: String,
+    pub route: String,
+    pub travel_date: NaiveDate,
+    pub price: f64,
+    pub kind: String,
+    pub created_at: String,
+    pub delivered_at: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReliabilityAggregate {
+    pub carrier: String,
+    pub flights: u32,
+    pub on_time: u32,
+    pub first_date: NaiveDate,
+    pub last_date: NaiveDate,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum QuotaOutcome {
     /// The call may proceed; `used` counts this call.
@@ -84,6 +115,48 @@ impl Db {
 
             CREATE INDEX IF NOT EXISTS pos_quotes_lookup
                 ON pos_quotes (route, travel_date, storefront_country, observed_at);
+
+            CREATE TABLE IF NOT EXISTS reliability (
+                origin     TEXT NOT NULL,
+                dest       TEXT NOT NULL,
+                carrier    TEXT NOT NULL,
+                month      TEXT NOT NULL,
+                flights    INTEGER NOT NULL,
+                on_time    INTEGER NOT NULL,
+                first_date TEXT NOT NULL,
+                last_date  TEXT NOT NULL,
+                PRIMARY KEY (origin, dest, carrier, month)
+            );
+
+            CREATE INDEX IF NOT EXISTS reliability_route ON reliability (origin, dest);
+
+            CREATE TABLE IF NOT EXISTS watches (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                email       TEXT NOT NULL,
+                route       TEXT NOT NULL,
+                travel_date TEXT NOT NULL,
+                threshold   REAL,
+                active      INTEGER NOT NULL DEFAULT 1,
+                created_at  TEXT NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS watches_email ON watches (email, active);
+            CREATE INDEX IF NOT EXISTS watches_route ON watches (route, travel_date, active);
+
+            CREATE TABLE IF NOT EXISTS alerts (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                watch_id     INTEGER NOT NULL,
+                email        TEXT NOT NULL,
+                route        TEXT NOT NULL,
+                travel_date  TEXT NOT NULL,
+                price        REAL NOT NULL,
+                kind         TEXT NOT NULL,
+                created_at   TEXT NOT NULL,
+                delivered_at TEXT
+            );
+
+            CREATE INDEX IF NOT EXISTS alerts_email ON alerts (email, created_at);
+            CREATE INDEX IF NOT EXISTS alerts_watch ON alerts (watch_id, created_at);
             "#,
         )?;
         Ok(Self {
@@ -374,6 +447,229 @@ impl Db {
         Ok(count > 0)
     }
 
+    /// Upsert monthly on-time counts per route and carrier.
+    pub fn record_reliability(
+        &self,
+        rows: &[faredesk_core::ReliabilityCount],
+    ) -> Result<usize, DbError> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        for row in rows {
+            tx.execute(
+                "INSERT INTO reliability (origin, dest, carrier, month, flights, on_time, first_date, last_date)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                 ON CONFLICT(origin, dest, carrier, month)
+                 DO UPDATE SET flights = excluded.flights, on_time = excluded.on_time,
+                               first_date = excluded.first_date, last_date = excluded.last_date",
+                params![
+                    row.origin,
+                    row.dest,
+                    row.carrier,
+                    row.month,
+                    row.flights,
+                    row.on_time,
+                    row.first_date.format("%Y-%m-%d").to_string(),
+                    row.last_date.format("%Y-%m-%d").to_string()
+                ],
+            )?;
+        }
+        tx.commit()?;
+        Ok(rows.len())
+    }
+
+    /// Summed counts per carrier for a route, across every ingested month.
+    pub fn reliability_for(
+        &self,
+        origin: &str,
+        dest: &str,
+    ) -> Result<Vec<ReliabilityAggregate>, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut statement = conn.prepare(
+            "SELECT carrier, SUM(flights), SUM(on_time), MIN(first_date), MAX(last_date)
+             FROM reliability
+             WHERE origin = ?1 AND dest = ?2
+             GROUP BY carrier
+             ORDER BY carrier",
+        )?;
+        let rows = statement.query_map(params![origin, dest], |row| {
+            let carrier: String = row.get(0)?;
+            let flights: i64 = row.get(1)?;
+            let on_time: i64 = row.get(2)?;
+            let first: String = row.get(3)?;
+            let last: String = row.get(4)?;
+            Ok((carrier, flights, on_time, first, last))
+        })?;
+
+        let mut aggregates = Vec::new();
+        for row in rows {
+            let (carrier, flights, on_time, first, last) = row?;
+            let (Ok(first_date), Ok(last_date)) = (
+                NaiveDate::parse_from_str(&first, "%Y-%m-%d"),
+                NaiveDate::parse_from_str(&last, "%Y-%m-%d"),
+            ) else {
+                continue;
+            };
+            aggregates.push(ReliabilityAggregate {
+                carrier,
+                flights: flights.max(0) as u32,
+                on_time: on_time.max(0) as u32,
+                first_date,
+                last_date,
+            });
+        }
+        Ok(aggregates)
+    }
+
+    // -- Watches and alerts -------------------------------------------------
+
+    pub fn create_watch(
+        &self,
+        email: &str,
+        route: &str,
+        travel_date: NaiveDate,
+        threshold: Option<f64>,
+        created_at: &str,
+    ) -> Result<i64, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "INSERT INTO watches (email, route, travel_date, threshold, active, created_at)
+             VALUES (?1, ?2, ?3, ?4, 1, ?5)",
+            params![
+                email,
+                route,
+                travel_date.format("%Y-%m-%d").to_string(),
+                threshold,
+                created_at
+            ],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn list_watches(&self, email: &str) -> Result<Vec<Watch>, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut statement = conn.prepare(
+            "SELECT id, email, route, travel_date, threshold, created_at
+             FROM watches WHERE email = ?1 AND active = 1 ORDER BY id DESC",
+        )?;
+        let rows = statement.query_map(params![email], map_watch)?;
+        collect_watches(rows)
+    }
+
+    pub fn active_watches(&self) -> Result<Vec<Watch>, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut statement = conn.prepare(
+            "SELECT id, email, route, travel_date, threshold, created_at
+             FROM watches WHERE active = 1 ORDER BY id",
+        )?;
+        let rows = statement.query_map([], map_watch)?;
+        collect_watches(rows)
+    }
+
+    /// Soft-delete a watch the caller owns.
+    pub fn delete_watch(&self, id: i64, email: &str) -> Result<bool, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let changed = conn.execute(
+            "UPDATE watches SET active = 0 WHERE id = ?1 AND email = ?2 AND active = 1",
+            params![id, email],
+        )?;
+        Ok(changed > 0)
+    }
+
+    pub fn alerts_for_watch_since(&self, watch_id: i64, since: &str) -> Result<i64, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let count = conn.query_row(
+            "SELECT COUNT(*) FROM alerts WHERE watch_id = ?1 AND created_at >= ?2",
+            params![watch_id, since],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    pub fn alerts_for_email_route_since(
+        &self,
+        email: &str,
+        route: &str,
+        since: &str,
+    ) -> Result<i64, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let count = conn.query_row(
+            "SELECT COUNT(*) FROM alerts WHERE email = ?1 AND route = ?2 AND created_at >= ?3",
+            params![email, route, since],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    pub fn alerts_for_email_since(&self, email: &str, since: &str) -> Result<i64, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let count = conn.query_row(
+            "SELECT COUNT(*) FROM alerts WHERE email = ?1 AND created_at >= ?2",
+            params![email, since],
+            |row| row.get(0),
+        )?;
+        Ok(count)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn record_alert(
+        &self,
+        watch_id: i64,
+        email: &str,
+        route: &str,
+        travel_date: NaiveDate,
+        price: f64,
+        kind: &str,
+        created_at: &str,
+    ) -> Result<i64, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        conn.execute(
+            "INSERT INTO alerts (watch_id, email, route, travel_date, price, kind, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                watch_id,
+                email,
+                route,
+                travel_date.format("%Y-%m-%d").to_string(),
+                price,
+                kind,
+                created_at
+            ],
+        )?;
+        Ok(conn.last_insert_rowid())
+    }
+
+    pub fn alerts_for_email(&self, email: &str, limit: i64) -> Result<Vec<AlertRow>, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut statement = conn.prepare(
+            "SELECT id, email, route, travel_date, price, kind, created_at, delivered_at
+             FROM alerts WHERE email = ?1 ORDER BY id DESC LIMIT ?2",
+        )?;
+        let rows = statement.query_map(params![email, limit], map_alert)?;
+        collect_alerts(rows)
+    }
+
+    pub fn undelivered_alerts(&self, limit: i64) -> Result<Vec<AlertRow>, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut statement = conn.prepare(
+            "SELECT id, email, route, travel_date, price, kind, created_at, delivered_at
+             FROM alerts WHERE delivered_at IS NULL ORDER BY id LIMIT ?1",
+        )?;
+        let rows = statement.query_map(params![limit], map_alert)?;
+        collect_alerts(rows)
+    }
+
+    pub fn mark_alerts_delivered(&self, ids: &[i64], at: &str) -> Result<usize, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut changed = 0;
+        for id in ids {
+            changed += conn.execute(
+                "UPDATE alerts SET delivered_at = ?1 WHERE id = ?2 AND delivered_at IS NULL",
+                params![at, id],
+            )?;
+        }
+        Ok(changed)
+    }
+
     pub fn observation_count(&self, route: &str) -> Result<i64, DbError> {
         let conn = self.conn.lock().expect("db lock");
         let count = conn.query_row(
@@ -383,6 +679,87 @@ impl Db {
         )?;
         Ok(count)
     }
+}
+
+type WatchRow = (i64, String, String, String, Option<f64>, String);
+type AlertRowData = (
+    i64,
+    String,
+    String,
+    String,
+    f64,
+    String,
+    String,
+    Option<String>,
+);
+
+fn map_watch(row: &rusqlite::Row<'_>) -> rusqlite::Result<WatchRow> {
+    Ok((
+        row.get(0)?,
+        row.get(1)?,
+        row.get(2)?,
+        row.get(3)?,
+        row.get(4)?,
+        row.get(5)?,
+    ))
+}
+
+fn collect_watches(
+    rows: rusqlite::MappedRows<'_, impl FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<WatchRow>>,
+) -> Result<Vec<Watch>, DbError> {
+    let mut watches = Vec::new();
+    for row in rows {
+        let (id, email, route, travel_date, threshold, created_at) = row?;
+        if let Ok(travel_date) = NaiveDate::parse_from_str(&travel_date, "%Y-%m-%d") {
+            watches.push(Watch {
+                id,
+                email,
+                route,
+                travel_date,
+                threshold,
+                created_at,
+            });
+        }
+    }
+    Ok(watches)
+}
+
+fn map_alert(row: &rusqlite::Row<'_>) -> rusqlite::Result<AlertRowData> {
+    Ok((
+        row.get(0)?,
+        row.get(1)?,
+        row.get(2)?,
+        row.get(3)?,
+        row.get(4)?,
+        row.get(5)?,
+        row.get(6)?,
+        row.get(7)?,
+    ))
+}
+
+fn collect_alerts(
+    rows: rusqlite::MappedRows<
+        '_,
+        impl FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<AlertRowData>,
+    >,
+) -> Result<Vec<AlertRow>, DbError> {
+    let mut alerts = Vec::new();
+    for row in rows {
+        let (id, email, route, travel_date, price, kind, created_at, delivered_at) = row?;
+        if let Ok(travel_date) = NaiveDate::parse_from_str(&travel_date, "%Y-%m-%d") {
+            alerts.push(AlertRow {
+                id,
+                email,
+                route,
+                travel_date,
+                price,
+                kind,
+                created_at,
+                delivered_at,
+            });
+        }
+    }
+    Ok(alerts)
 }
 
 fn day_after(day: &str) -> NaiveDate {
@@ -456,6 +833,93 @@ mod tests {
             Some("EUR")
         );
         assert!(db.has_observation("BER-LIS", travel, day).unwrap());
+    }
+
+    #[test]
+    fn watches_and_alert_caps_round_trip() {
+        let db = Db::open_in_memory().unwrap();
+        let travel = NaiveDate::from_ymd_opt(2027, 3, 1).unwrap();
+        let id = db
+            .create_watch(
+                "a@example.com",
+                "BER-LIS",
+                travel,
+                Some(100.0),
+                "2026-10-23T09:00:00Z",
+            )
+            .unwrap();
+        assert_eq!(db.list_watches("a@example.com").unwrap().len(), 1);
+        assert_eq!(db.active_watches().unwrap().len(), 1);
+
+        db.record_alert(
+            id,
+            "a@example.com",
+            "BER-LIS",
+            travel,
+            99.0,
+            "threshold",
+            "2026-10-23T09:05:00Z",
+        )
+        .unwrap();
+        assert_eq!(
+            db.alerts_for_email_since("a@example.com", "2026-10-20T00:00:00Z")
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            db.alerts_for_email_route_since("a@example.com", "BER-LIS", "2026-10-20T00:00:00Z")
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            db.alerts_for_email("a@example.com", 10).unwrap()[0].price,
+            99.0
+        );
+        assert_eq!(db.undelivered_alerts(10).unwrap().len(), 1);
+        assert_eq!(
+            db.mark_alerts_delivered(
+                &[db.undelivered_alerts(10).unwrap()[0].id],
+                "2026-10-23T10:00:00Z"
+            )
+            .unwrap(),
+            1
+        );
+        assert!(db.undelivered_alerts(10).unwrap().is_empty());
+        assert!(db.delete_watch(id, "a@example.com").unwrap());
+        assert!(db.list_watches("a@example.com").unwrap().is_empty());
+    }
+
+    #[test]
+    fn reliability_counts_aggregate_by_carrier() {
+        let db = Db::open_in_memory().unwrap();
+        let day = NaiveDate::from_ymd_opt(2025, 12, 1).unwrap();
+        let rows = vec![
+            faredesk_core::ReliabilityCount {
+                origin: "JFK".into(),
+                dest: "LAX".into(),
+                carrier: "AA".into(),
+                month: "2025-11".into(),
+                flights: 100,
+                on_time: 80,
+                first_date: day,
+                last_date: day,
+            },
+            faredesk_core::ReliabilityCount {
+                origin: "JFK".into(),
+                dest: "LAX".into(),
+                carrier: "AA".into(),
+                month: "2025-12".into(),
+                flights: 50,
+                on_time: 45,
+                first_date: day,
+                last_date: day,
+            },
+        ];
+        assert_eq!(db.record_reliability(&rows).unwrap(), 2);
+        let aggregates = db.reliability_for("JFK", "LAX").unwrap();
+        assert_eq!(aggregates.len(), 1);
+        assert_eq!(aggregates[0].flights, 150);
+        assert_eq!(aggregates[0].on_time, 125);
     }
 
     #[test]

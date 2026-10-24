@@ -163,6 +163,18 @@ pub fn data_cards(airports_updated_at: DateTime<Utc>, airports_source: String) -
             ],
         ),
         card(
+            "reliability-bts",
+            Dataset::Reliability,
+            "US Bureau of Transportation Statistics",
+            "Public domain",
+            "Monthly On-Time Performance zips, aggregated to the share of flights arriving within 15 minutes by route and reporting carrier. Cancellations and diversions are excluded.",
+            release,
+            &[
+                "US reporting carriers only.",
+                "Coverage depends on which monthly files have been ingested.",
+            ],
+        ),
+        card(
             "data-cards-registry",
             Dataset::Meta,
             "First-party registry",
@@ -212,6 +224,7 @@ mod tests {
             Dataset::Explore,
             Dataset::Climate,
             Dataset::Access,
+            Dataset::Reliability,
             Dataset::Meta,
         ] {
             assert!(
