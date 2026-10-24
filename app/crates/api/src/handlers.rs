@@ -233,9 +233,9 @@ pub async fn routes(
         origin.code
     )];
     if !live {
-        provenance
-            .notes
-            .push("No live fare source is configured, so these routes cannot be priced now.".to_string());
+        provenance.notes.push(
+            "No live fare source is configured, so these routes cannot be priced now.".to_string(),
+        );
     }
     if summaries.is_empty() {
         provenance

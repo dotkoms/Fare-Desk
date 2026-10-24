@@ -120,7 +120,9 @@ pub fn fixture_source(
     places: std::collections::HashMap<String, Place>,
     providers: Vec<faredesk_core::Provider>,
 ) -> Option<Source> {
-    Some(Source::Fixtures(fixtures::FixtureSource::new(places, providers)))
+    Some(Source::Fixtures(fixtures::FixtureSource::new(
+        places, providers,
+    )))
 }
 
 #[cfg(not(any(test, feature = "test-fixtures")))]

@@ -89,7 +89,8 @@ impl AppState {
         let client = reqwest_client();
 
         // Present only in test builds: the server binary has no demo fares.
-        let fixtures = faredesk_sources::fixture_source(places.clone(), providers.clone()).map(Arc::new);
+        let fixtures =
+            faredesk_sources::fixture_source(places.clone(), providers.clone()).map(Arc::new);
         let serpapi = config.serpapi_key.as_ref().map(|key| {
             let mut source = SerpApiSource::new(client.clone(), key, providers, places);
             if let Some(base_url) = &config.serpapi_base_url {

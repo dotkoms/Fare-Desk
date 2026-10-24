@@ -174,7 +174,12 @@ impl Reference {
                 Some((rank, place))
             })
             .collect();
-        let size = |place: &Place| self.size_by_code.get(&place.code).copied().unwrap_or_default();
+        let size = |place: &Place| {
+            self.size_by_code
+                .get(&place.code)
+                .copied()
+                .unwrap_or_default()
+        };
         scored.sort_by(|a, b| {
             a.0.cmp(&b.0)
                 .then_with(|| size(a.1).cmp(&size(b.1)))
@@ -235,7 +240,12 @@ mod tests {
     fn search_ranks_large_airports_first_within_a_match() {
         let reference = Reference::load().unwrap();
         let results = reference.search("barc", 5);
-        assert_eq!(results[0].code, "BCN", "{:?}", results.iter().map(|p| &p.code).collect::<Vec<_>>());
+        assert_eq!(
+            results[0].code,
+            "BCN",
+            "{:?}",
+            results.iter().map(|p| &p.code).collect::<Vec<_>>()
+        );
     }
 
     #[test]

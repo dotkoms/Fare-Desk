@@ -194,7 +194,9 @@ impl Collector {
         // Start one route further down the list each day, so a daily quota smaller
         // than the watchlist still samples every route over time.
         let start = rotation_start(watchlist.routes.len(), today);
-        let ordered = watchlist.routes[start..].iter().chain(&watchlist.routes[..start]);
+        let ordered = watchlist.routes[start..]
+            .iter()
+            .chain(&watchlist.routes[..start]);
 
         'routes: for route in ordered {
             let travel_date = match route.travel_date(today) {

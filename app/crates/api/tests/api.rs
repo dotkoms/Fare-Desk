@@ -243,7 +243,10 @@ async fn live_source_with_a_spent_quota_fails_fast() {
 async fn a_dead_source_serves_the_last_good_answer() {
     let state = AppState::in_memory_with_sources(
         Config::default(),
-        Some(Source::Fixtures(FixtureSource::new(HashMap::new(), Vec::new()))),
+        Some(Source::Fixtures(FixtureSource::new(
+            HashMap::new(),
+            Vec::new(),
+        ))),
         None,
     )
     .unwrap();
@@ -287,7 +290,10 @@ async fn a_dead_source_serves_the_last_good_answer() {
 async fn a_dead_source_without_a_cache_is_a_typed_error() {
     let state = AppState::in_memory_with_sources(
         Config::default(),
-        Some(Source::Fixtures(FixtureSource::new(HashMap::new(), Vec::new()))),
+        Some(Source::Fixtures(FixtureSource::new(
+            HashMap::new(),
+            Vec::new(),
+        ))),
         None,
     )
     .unwrap();
@@ -348,7 +354,13 @@ async fn routes_list_destinations_with_recorded_live_fares() {
 #[tokio::test]
 async fn search_without_a_live_source_refuses_to_invent_fares() {
     let state = AppState::in_memory_with_sources(Config::default(), None, None).unwrap();
-    let (status, body) = call(app(state.clone()), "POST", "/api/search", Some(search_body("BER", "LIS"))).await;
+    let (status, body) = call(
+        app(state.clone()),
+        "POST",
+        "/api/search",
+        Some(search_body("BER", "LIS")),
+    )
+    .await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"]["code"], "source_not_configured");
 
@@ -1130,7 +1142,9 @@ async fn fixture_return_search_prices_both_directions() {
     assert_eq!(status, StatusCode::OK, "{body}");
     assert_eq!(body["query"]["returnDate"], json!(back));
     assert_eq!(body["itineraries"].as_array().unwrap().len(), 5);
-    let returns = body["returnItineraries"].as_array().expect("return flights");
+    let returns = body["returnItineraries"]
+        .as_array()
+        .expect("return flights");
     assert_eq!(returns.len(), 5);
     for itinerary in returns {
         let segments = itinerary["segments"].as_array().unwrap();
@@ -1178,9 +1192,12 @@ async fn mock_serpapi() -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
-        axum::serve(listener, axum::Router::new().route("/search.json", get(handler)))
-            .await
-            .unwrap();
+        axum::serve(
+            listener,
+            axum::Router::new().route("/search.json", get(handler)),
+        )
+        .await
+        .unwrap();
     });
     format!("http://{addr}/search.json")
 }
@@ -1207,7 +1224,10 @@ async fn live_return_search_is_two_metered_one_way_searches() {
     assert_eq!(body["provenance"]["freshness"], "live");
     assert_eq!(body["itineraries"][0]["totalPrice"], 111.0);
     assert_eq!(body["returnItineraries"][0]["totalPrice"], 99.0);
-    assert_eq!(body["returnItineraries"][0]["segments"][0]["from"]["code"], "LIS");
+    assert_eq!(
+        body["returnItineraries"][0]["segments"][0]["from"]["code"],
+        "LIS"
+    );
 
     let (_, health) = call(app(state), "GET", "/healthz", None).await;
     assert_eq!(health["sources"][1]["usedToday"], 2, "{health}");
@@ -1221,7 +1241,12 @@ async fn a_rejected_key_is_reported_as_configuration_not_an_outage() {
     tokio::spawn(async move {
         let router = axum::Router::new().route(
             "/search.json",
-            get(|| async { (StatusCode::UNAUTHORIZED, axum::Json(json!({ "error": "Invalid API key." }))) }),
+            get(|| async {
+                (
+                    StatusCode::UNAUTHORIZED,
+                    axum::Json(json!({ "error": "Invalid API key." })),
+                )
+            }),
         );
         axum::serve(listener, router).await.unwrap();
     });
@@ -1233,8 +1258,17 @@ async fn a_rejected_key_is_reported_as_configuration_not_an_outage() {
         ..Config::default()
     })
     .expect("state");
-    let (status, body) = call(app(state), "POST", "/api/search", Some(search_body("BER", "LIS"))).await;
+    let (status, body) = call(
+        app(state),
+        "POST",
+        "/api/search",
+        Some(search_body("BER", "LIS")),
+    )
+    .await;
     assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
     assert_eq!(body["error"]["code"], "source_not_configured");
-    assert!(body["error"]["message"].as_str().unwrap().contains("rejected the API key"));
+    assert!(body["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("rejected the API key"));
 }
