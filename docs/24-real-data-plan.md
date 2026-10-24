@@ -20,7 +20,7 @@ The code path is built and tested end to end against a SerpAPI stand-in (`app/sc
 | 4 | Run `app/scripts/live-check.sh` (3 searches) | Claude | It prints `PASS` against Google Flights data |
 | 5 | Search in the web app; check prices against google.com/travel/flights for the same date | Owner | Totals match within bags and currency |
 | 6 | Fix what real responses break (unknown connection airports, bag text, odd times) | Claude | Itineraries drop only with a logged reason |
-| 7 | Choose the corridor; write `data/watchlist.yaml`; schedule the collector daily | Owner + Claude | `fare_history` grows by one row per route per day |
+| 7 | `cp data/watchlist.nyc.yaml data/watchlist.yaml`; schedule the collector daily | Owner + Claude | `fare_history` grows by one row per route per day (on the free tier, ~8 routes a day, rotating) |
 | 8 | Buy the plan that fits §3 and raise `SERPAPI_DAILY_LIMIT` | Owner | Collector and users fit inside the daily limit |
 | 9 | Day 14: first verdicts on corridor routes | — | When to buy leaves "Collecting baseline" |
 
@@ -138,9 +138,11 @@ Set `SERPAPI_DAILY_LIMIT` to the plan's monthly allowance divided by 30. Searche
 
 ## 4. Decisions for the owner
 
-1. **Provider:** SerpAPI (what the adapter speaks today) or SearchApi (cheaper, needs an adapter).
+Decided 24 October 2026: **SerpAPI** first, and the **New York corridor** (`data/watchlist.nyc.yaml`: 30 routes from JFK and LGA, quoted in USD).
+
+1. ~~**Provider:**~~ SerpAPI; a SearchApi adapter can follow to cut cost.
 2. **Monthly budget:** the free tier (8 calls a day) is only enough to test Phase 1.
-3. **Corridor:** the home airport and the 25–30 routes the collector watches.
+3. ~~**Corridor:**~~ New York.
 4. **Hosting:** which container host for the API and collector (Fly.io, Render, Railway).
 5. **Duffel:** whether to open an account for Phase 5 offer detail.
 
