@@ -74,7 +74,7 @@ type ApiItinerary = {
   stops: number
   fareFamily?: string
   bagsIncluded: { carryOn: number; checked: number }
-  fareRules: { refundable: boolean; changeFee?: number }
+  fareRules: { refundable: boolean; changeable: boolean; changeFee?: number }
   priceBreakdown: { fare: number; bags: number; bagFeeEstimated: boolean }
   providerName: string
   providerUrl: string
@@ -115,9 +115,6 @@ function clock(value: string) {
 }
 
 function toItinerary(item: ApiItinerary): Itinerary {
-  if (item.currency !== 'EUR') {
-    throw new Error(`Unsupported currency ${item.currency} from the data plane`)
-  }
   const verifiedMinutesAgo = item.verifiedAt
     ? Math.max(0, Math.round((Date.now() - Date.parse(item.verifiedAt)) / 60_000))
     : null
@@ -135,13 +132,15 @@ function toItinerary(item: ApiItinerary): Itinerary {
       durationMinutes: segment.durationMinutes,
     })),
     total: Math.round(item.totalPrice),
-    currency: 'EUR',
+    currency: item.currency,
     durationMinutes: item.totalDurationMinutes,
     stops: item.stops,
     bagsIncluded: item.bagsIncluded.checked,
     bagFee: item.priceBreakdown.bags,
     refundable: item.fareRules.refundable,
     changeFee: item.fareRules.changeFee ?? 0,
+    // The live source reports no fare rules; its all-false default means "unknown", not "free".
+    rulesKnown: item.fareRules.refundable || item.fareRules.changeable || item.fareRules.changeFee !== undefined,
     provider: item.providerName,
     providerUrl: item.providerUrl,
     connectionWarnings: item.connectionWarnings ?? [],
@@ -190,7 +189,7 @@ export async function searchFlights(query: Query): Promise<SearchOutcome> {
       adults: query.passengers,
       checkedBags: query.bags,
       carryOnBags: 1,
-      currency: 'EUR',
+      currency: query.currency,
       source: 'auto',
     }),
   })

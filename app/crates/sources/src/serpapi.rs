@@ -93,6 +93,13 @@ impl SerpApiSource {
             })?;
 
         let status = response.status();
+        // A rejected key is a configuration problem, not an outage: say so plainly
+        // instead of serving it as a transient failure.
+        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+            return Err(SourceError::NotConfigured(
+                "SerpAPI rejected the API key; check SERPAPI_KEY".into(),
+            ));
+        }
         if !status.is_success() {
             let body = response.text().await.unwrap_or_default();
             let snippet: String = body.chars().take(200).collect();

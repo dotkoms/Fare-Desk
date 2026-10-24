@@ -1212,3 +1212,29 @@ async fn live_return_search_is_two_metered_one_way_searches() {
     let (_, health) = call(app(state), "GET", "/healthz", None).await;
     assert_eq!(health["sources"][1]["usedToday"], 2, "{health}");
 }
+
+#[tokio::test]
+async fn a_rejected_key_is_reported_as_configuration_not_an_outage() {
+    use axum::routing::get;
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let router = axum::Router::new().route(
+            "/search.json",
+            get(|| async { (StatusCode::UNAUTHORIZED, axum::Json(json!({ "error": "Invalid API key." }))) }),
+        );
+        axum::serve(listener, router).await.unwrap();
+    });
+    let state = AppState::in_memory(Config {
+        ground_routing: false,
+        transit_routing: false,
+        serpapi_key: Some("wrong-key".into()),
+        serpapi_base_url: Some(format!("http://{addr}/search.json")),
+        ..Config::default()
+    })
+    .expect("state");
+    let (status, body) = call(app(state), "POST", "/api/search", Some(search_body("BER", "LIS"))).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "{body}");
+    assert_eq!(body["error"]["code"], "source_not_configured");
+    assert!(body["error"]["message"].as_str().unwrap().contains("rejected the API key"));
+}

@@ -4,7 +4,7 @@ import { placeByCode, searchPlaces, type Place } from '../lib/api'
 type Props = {
   label: string
   code: string
-  onChange: (code: string) => void
+  onChange: (code: string, place: Place) => void
 }
 
 const describe = (place: Place) => `${place.code} · ${place.city}`
@@ -62,7 +62,7 @@ export default function PlaceField({ label, code, onChange }: Props) {
     setSelected(place)
     setText(describe(place))
     setOpen(false)
-    onChange(place.code)
+    onChange(place.code, place)
   }
 
   function restore() {

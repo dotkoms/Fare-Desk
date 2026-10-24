@@ -21,7 +21,7 @@ export type Itinerary = {
   id: string
   segments: Segment[]
   total: number
-  currency: 'EUR'
+  currency: string
   durationMinutes: number
   stops: number
   bagsIncluded: number
@@ -29,6 +29,8 @@ export type Itinerary = {
   bagFee?: number
   refundable: boolean
   changeFee: number
+  /** False when the source gave no fare rules; then refundable and changeFee mean nothing. */
+  rulesKnown: boolean
   provider: string
   /** Where "Open on provider" goes; the purchase happens there, never here. */
   providerUrl: string
@@ -50,4 +52,6 @@ export type Query = {
   returnDate: string
   passengers: number
   bags: number
+  /** What the data plane quotes in; follows the origin airport's country. */
+  currency: string
 }

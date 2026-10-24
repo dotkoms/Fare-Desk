@@ -6,14 +6,22 @@ import Stage from './components/Stage'
 import { searchFlights, type Provenance } from './lib/api'
 import type { Itinerary, Query, Sort } from './types'
 
+function isoDaysFromNow(days: number) {
+  const date = new Date()
+  date.setDate(date.getDate() + days)
+  return date.toISOString().slice(0, 10)
+}
+
+// Opens on the New York corridor the collector watches, a month out.
 const initialQuery: Query = {
   tripType: 'return',
-  origin: 'BER',
-  destination: 'LIS',
-  depart: '2027-03-01',
-  returnDate: '2027-03-08',
+  origin: 'JFK',
+  destination: 'LAX',
+  depart: isoDaysFromNow(30),
+  returnDate: isoDaysFromNow(37),
   passengers: 1,
-  bags: 1,
+  bags: 0,
+  currency: 'USD',
 }
 
 function bestScore(total: number, durationMinutes: number) {
@@ -156,6 +164,7 @@ export default function App() {
                   outbound: `${activeQuery.origin} → ${activeQuery.destination}`,
                   back: `${activeQuery.destination} → ${activeQuery.origin}`,
                   total: selected.total + selectedReturn.total,
+                  currency: selected.currency,
                 }
               : null
           }

@@ -1,5 +1,5 @@
 import type { Itinerary, Sort } from '../types'
-import { formatDuration } from '../lib/format'
+import { formatDuration, formatMoney } from '../lib/format'
 
 type Props = {
   itineraries: Itinerary[]
@@ -19,6 +19,7 @@ type Props = {
     outbound: string
     back: string
     total: number
+    currency: string
   } | null
 }
 
@@ -32,7 +33,7 @@ function bagLabel(itinerary: Itinerary) {
   if (itinerary.bagsIncluded > 0) {
     return `${itinerary.bagsIncluded} checked bag${itinerary.bagsIncluded > 1 ? 's' : ''} included`
   }
-  if (fee > 0) return `Bag added · €${fee}`
+  if (fee > 0) return `Bag added · ${formatMoney(fee, itinerary.currency)}`
   return 'Carry-on only'
 }
 
@@ -72,7 +73,7 @@ function ResultCard({
 
         <div className="result-bottom">
           <span className="result-price">
-            €{itinerary.total} <small>total</small>
+            {formatMoney(itinerary.total, itinerary.currency)} <small>total</small>
           </span>
           <span className="result-bag">{bagLabel(itinerary)}</span>
         </div>
@@ -151,7 +152,7 @@ export default function Results({
             </button>
           </div>
           <p className="trip-total">
-            <strong>€{trip.total}</strong> trip total · two one-way tickets
+            <strong>{formatMoney(trip.total, trip.currency)}</strong> trip total · two one-way tickets
           </p>
         </div>
       ) : null}

@@ -1,0 +1,194 @@
+# New York corridor: 30 routes from JFK and LGA, one search per route per day.
+# Copy to data/watchlist.yaml (gitignored) for the collector:
+#   cp data/watchlist.nyc.yaml data/watchlist.yaml
+# Routes are in priority order. On a small daily quota (the free tier is ~8 searches a day)
+# the collector starts one route further down each day, so all 30 are sampled over time.
+# date_window is the travel window it rotates through; move it forward every few months.
+
+home_airports: [JFK, LGA, EWR]
+currency: USD
+
+baseline:
+  window_days: 90
+  min_observations: 14
+
+routes:
+  - name: New York to Los Angeles
+    origin: [JFK]
+    destination: [LAX]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to London
+    origin: [JFK]
+    destination: [LHR]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to Miami
+    origin: [JFK]
+    destination: [MIA]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to San Francisco
+    origin: [JFK]
+    destination: [SFO]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to Paris
+    origin: [JFK]
+    destination: [CDG]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to Orlando
+    origin: [JFK]
+    destination: [MCO]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to Chicago
+    origin: [LGA]
+    destination: [ORD]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to Cancún
+    origin: [JFK]
+    destination: [CUN]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to Las Vegas
+    origin: [JFK]
+    destination: [LAS]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to Rome
+    origin: [JFK]
+    destination: [FCO]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to Atlanta
+    origin: [LGA]
+    destination: [ATL]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to San Juan
+    origin: [JFK]
+    destination: [SJU]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to Fort Lauderdale
+    origin: [JFK]
+    destination: [FLL]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to Barcelona
+    origin: [JFK]
+    destination: [BCN]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to Dallas
+    origin: [LGA]
+    destination: [DFW]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to Seattle
+    origin: [JFK]
+    destination: [SEA]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to Lisbon
+    origin: [JFK]
+    destination: [LIS]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to Denver
+    origin: [LGA]
+    destination: [DEN]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to Dublin
+    origin: [JFK]
+    destination: [DUB]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to San Diego
+    origin: [JFK]
+    destination: [SAN]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to Amsterdam
+    origin: [JFK]
+    destination: [AMS]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to Austin
+    origin: [JFK]
+    destination: [AUS]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to Madrid
+    origin: [JFK]
+    destination: [MAD]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to New Orleans
+    origin: [LGA]
+    destination: [MSY]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to Mexico City
+    origin: [JFK]
+    destination: [MEX]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to Boston
+    origin: [LGA]
+    destination: [BOS]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to Tokyo
+    origin: [JFK]
+    destination: [HND]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to Reykjavík
+    origin: [JFK]
+    destination: [KEF]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to Punta Cana
+    origin: [JFK]
+    destination: [PUJ]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on
+
+  - name: New York to Athens
+    origin: [JFK]
+    destination: [ATH]
+    date_window: 2026-12-01/2027-03-31
+    bags: carry_on

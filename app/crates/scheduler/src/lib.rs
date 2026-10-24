@@ -146,6 +146,14 @@ impl WatchRoute {
     }
 }
 
+/// Index of the route the collector starts from on `today`.
+fn rotation_start(routes: usize, today: NaiveDate) -> usize {
+    if routes == 0 {
+        return 0;
+    }
+    days_since_epoch(today).rem_euclid(routes as i64) as usize
+}
+
 fn days_since_epoch(date: NaiveDate) -> i64 {
     let epoch = NaiveDate::from_ymd_opt(1970, 1, 1).expect("epoch");
     date.signed_duration_since(epoch).num_days()
@@ -183,7 +191,12 @@ impl Collector {
         let today = self.now.date_naive();
         let live = self.source.is_live();
 
-        'routes: for route in &watchlist.routes {
+        // Start one route further down the list each day, so a daily quota smaller
+        // than the watchlist still samples every route over time.
+        let start = rotation_start(watchlist.routes.len(), today);
+        let ordered = watchlist.routes[start..].iter().chain(&watchlist.routes[..start]);
+
+        'routes: for route in ordered {
             let travel_date = match route.travel_date(today) {
                 Ok(date) => date,
                 Err(error) => {
@@ -364,6 +377,18 @@ mod tests {
             dry_run: false,
             max_searches: None,
         }
+    }
+
+    #[test]
+    fn the_starting_route_rotates_daily_through_the_list() {
+        let day = NaiveDate::from_ymd_opt(2026, 10, 23).unwrap();
+        let starts: Vec<usize> = (0..4)
+            .map(|offset| rotation_start(3, day + Duration::days(offset)))
+            .collect();
+        assert_eq!(starts[1], (starts[0] + 1) % 3);
+        assert_eq!(starts[2], (starts[0] + 2) % 3);
+        assert_eq!(starts[3], starts[0]);
+        assert_eq!(rotation_start(0, day), 0);
     }
 
     #[test]

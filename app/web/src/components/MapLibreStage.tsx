@@ -11,7 +11,7 @@ import {
 import 'maplibre-gl/dist/maplibre-gl.css'
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 import type { Feature, FeatureCollection, LineString, Point } from 'geojson'
-import { formatDuration } from '../lib/format'
+import { formatDuration, formatMoney } from '../lib/format'
 import { supportsWebGL } from '../lib/webgl'
 import { NAGAI, PALM, glitter, graticule, greatCircle } from '../map/nagai'
 import type { Airport, Itinerary } from '../types'
@@ -43,7 +43,7 @@ const EMPTY: FeatureCollection = { type: 'FeatureCollection', features: [] }
 // On desktop the console and the detail drawer float over the map, so the route fits between them.
 function framePadding(width: number) {
   return width >= 1100
-    ? { top: 170, bottom: 120, left: 444, right: 408 }
+    ? { top: 170, bottom: 120, left: 460, right: 480 }
     : { top: 150, bottom: 120, left: 72, right: 72 }
 }
 
@@ -400,6 +400,10 @@ export default function MapLibreStage({ itineraries, selectedId, onSelect, origi
 
     markersRef.current.forEach((marker) => marker.remove())
     const markers: Marker[] = []
+    // The eastern endpoint's label sits left of its dot, so it reads toward the route
+    // and stays clear of the detail drawer on the right.
+    const endpointLngs = [originCode, destinationCode].map((code) => places.get(code)?.lng ?? 0)
+    const easternmost = Math.max(...endpointLngs)
     for (const item of airports.features) {
       const { code, endpoint } = item.properties as { code: string; endpoint: boolean }
       const airport = places.get(code)
@@ -408,7 +412,11 @@ export default function MapLibreStage({ itineraries, selectedId, onSelect, origi
         ? labelElement('nagai-label', code, airport.city)
         : labelElement('nagai-label is-minor', code)
       markers.push(
-        new Marker({ element, anchor: 'bottom-left', offset: [8, -6] })
+        new Marker(
+          endpoint && airport.lng === easternmost
+            ? { element, anchor: 'bottom-right', offset: [-8, -6] }
+            : { element, anchor: 'bottom-left', offset: [8, -6] },
+        )
           .setLngLat([airport.lng, airport.lat])
           .addTo(map),
       )
@@ -420,13 +428,13 @@ export default function MapLibreStage({ itineraries, selectedId, onSelect, origi
       const middle = coordinates[Math.floor(coordinates.length / 2)]
       const chip = document.createElement('div')
       chip.className = 'nagai-chip'
-      chip.textContent = `${selected.segments[0].carrier.split(' ')[0]} · €${selected.total} · ${formatDuration(selected.durationMinutes)}`
+      chip.textContent = `${selected.segments[0].carrier.split(' ')[0]} · ${formatMoney(selected.total, selected.currency)} · ${formatDuration(selected.durationMinutes)}`
       markers.push(
         new Marker({ element: chip, anchor: 'left', offset: [10, 0] }).setLngLat(middle as [number, number]).addTo(map),
       )
     }
     markersRef.current = markers
-  }, [ready, routes, airports, places, selected])
+  }, [ready, routes, airports, places, selected, originCode, destinationCode])
 
   // Fit the route between the floating panels, tilted so the horizon and sky stay in view.
   useEffect(() => {

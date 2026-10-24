@@ -3,7 +3,7 @@ import type { Itinerary } from '../types'
 import GlobeBoundary from './GlobeBoundary'
 import Intel from './Intel'
 import RouteBoard from './RouteBoard'
-import { formatDuration } from '../lib/format'
+import { formatDuration, formatMoney } from '../lib/format'
 
 // MapLibre is heavy; keep it out of the shell bundle and load it alongside the stage.
 const MapStage = lazy(() => import('./MapLibreStage'))
@@ -74,7 +74,7 @@ export default function Stage({
         </div>
 
         <div className="stage-price">
-          <span>€{itinerary.total + (returnItinerary?.total ?? 0)}</span>
+          <span>{formatMoney(itinerary.total + (returnItinerary?.total ?? 0), itinerary.currency)}</span>
           <small>
             {returnItinerary ? 'trip total' : 'total'}
             {passengers > 1 ? ` · ${passengers} travellers` : ''}
@@ -130,19 +130,27 @@ export default function Stage({
                   {itinerary.bagsIncluded > 0
                     ? `${itinerary.bagsIncluded} checked`
                     : (itinerary.bagFee ?? 0) > 0
-                      ? `1 checked · €${itinerary.bagFee}`
+                      ? `1 checked · ${formatMoney(itinerary.bagFee ?? 0, itinerary.currency)}`
                       : 'Carry-on only'}
                 </strong>
               </div>
             </div>
 
             <div className="fare-rules">
-              <span className={itinerary.refundable ? 'rule-ok' : 'rule-warn'}>
-                {itinerary.refundable ? 'Refundable' : 'Non-refundable'}
-              </span>
-              <span>
-                {itinerary.changeFee === 0 ? 'Free changes' : `Change €${itinerary.changeFee} + fare difference`}
-              </span>
+              {itinerary.rulesKnown ? (
+                <>
+                  <span className={itinerary.refundable ? 'rule-ok' : 'rule-warn'}>
+                    {itinerary.refundable ? 'Refundable' : 'Non-refundable'}
+                  </span>
+                  <span>
+                    {itinerary.changeFee === 0
+                      ? 'Free changes'
+                      : `Change ${formatMoney(itinerary.changeFee, itinerary.currency)} + fare difference`}
+                  </span>
+                </>
+              ) : (
+                <span>Fare rules not provided by the source; confirm refunds and changes with the seller.</span>
+              )}
             </div>
 
             <div className="provider-row">
@@ -172,7 +180,8 @@ export default function Stage({
                   <strong>{returnItinerary.provider}</strong>
                   <span className="provider-note">
                     {returnItinerary.segments[0].depart} →{' '}
-                    {returnItinerary.segments[returnItinerary.segments.length - 1].arrive} · €{returnItinerary.total}
+                    {returnItinerary.segments[returnItinerary.segments.length - 1].arrive} ·{' '}
+                    {formatMoney(returnItinerary.total, returnItinerary.currency)}
                   </span>
                 </div>
                 <a
@@ -203,6 +212,7 @@ export default function Stage({
             destination={itinerary.segments[itinerary.segments.length - 1].to.code}
             travelDate={travelDate}
             currentPrice={itinerary.total}
+            currency={itinerary.currency}
           />
         )}
       </div>

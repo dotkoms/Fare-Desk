@@ -1,4 +1,5 @@
 import type { Query } from '../types'
+import { currencyForCountry } from '../lib/format'
 import PlaceField from './PlaceField'
 
 type Props = {
@@ -36,7 +37,11 @@ export default function SearchPanel({ query, onChange, onSearch }: Props) {
       </div>
 
       <div className="places">
-        <PlaceField label="From" code={query.origin} onChange={(origin) => onChange({ origin })} />
+        <PlaceField
+          label="From"
+          code={query.origin}
+          onChange={(origin, place) => onChange({ origin, currency: currencyForCountry(place.countryCode) })}
+        />
         <button
           type="button"
           className="swap"
@@ -51,11 +56,7 @@ export default function SearchPanel({ query, onChange, onSearch }: Props) {
       <div className="field-row">
         <label className="field">
           <span className="field-label">Depart</span>
-          <input
-            type="date"
-            value={query.depart}
-            onChange={(event) => onChange({ depart: event.target.value })}
-          />
+          <input type="date" value={query.depart} onChange={(event) => onChange({ depart: event.target.value })} />
         </label>
         <label className={`field ${query.tripType === 'oneway' ? 'is-disabled' : ''}`}>
           <span className="field-label">Return</span>

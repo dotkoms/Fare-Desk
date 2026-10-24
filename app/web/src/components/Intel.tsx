@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getRouteIntel, type RouteIntel, type Verdict } from '../lib/api'
+import { formatMoney } from '../lib/format'
 import Sparkline from './Sparkline'
 
 type Props = {
@@ -8,6 +9,8 @@ type Props = {
   travelDate: string
   /** The selected flight's total, shown next to the route's own numbers. */
   currentPrice: number
+  /** The selected flight's currency; route history uses the currency it was recorded in. */
+  currency: string
 }
 
 const VERDICT: Record<Verdict, { label: string; className: string }> = {
@@ -32,11 +35,9 @@ function ordinal(value: number) {
   }
 }
 
-const euros = (value: number) => `€${Math.round(value)}`
-
 type Result = { key: string } & ({ status: 'error'; message: string } | { status: 'ready'; intel: RouteIntel })
 
-export default function Intel({ origin, destination, travelDate, currentPrice }: Props) {
+export default function Intel({ origin, destination, travelDate, currentPrice, currency }: Props) {
   const key = `${origin}-${destination}-${travelDate}`
   const [result, setResult] = useState<Result | null>(null)
 
@@ -75,6 +76,7 @@ export default function Intel({ origin, destination, travelDate, currentPrice }:
   }
 
   const { intel } = state
+  const money = (value: number) => formatMoney(value, intel.currency)
   const verdict = intel.recommendation ?? 'insufficient'
   const enough = verdict !== 'insufficient' && intel.p10 !== null && intel.p90 !== null && intel.currentPrice !== null
 
@@ -108,12 +110,12 @@ export default function Intel({ origin, destination, travelDate, currentPrice }:
         <div>
           <span className="section-kicker">Lowest fare on this route today</span>
           <div className="intel-price">
-            {euros(today)}
+            {money(today)}
             <span>/ adult</span>
           </div>
           <div className="intel-sub">
             {intel.percentile !== null ? `${ordinal(Math.round(intel.percentile))} percentile · ` : ''}
-            {intel.sampleSize} days observed · this flight {euros(currentPrice)}
+            {intel.sampleSize} days observed · this flight {formatMoney(currentPrice, currency)}
           </div>
         </div>
         <span className={`recommendation ${className}`}>{label}</span>
@@ -121,9 +123,9 @@ export default function Intel({ origin, destination, travelDate, currentPrice }:
 
       <div className="range-block">
         <div className="range-labels">
-          <span>{euros(p10)}</span>
+          <span>{money(p10)}</span>
           <span>Middle 80% of fares</span>
-          <span>{euros(p90)}</span>
+          <span>{money(p90)}</span>
         </div>
         <div className="range-track">
           <div className="range-band" />
@@ -136,11 +138,11 @@ export default function Intel({ origin, destination, travelDate, currentPrice }:
       <div className="intel-evidence">
         <div>
           <span className="section-kicker">In 7 days</span>
-          <strong>{intel.expected7 ? `${euros(intel.expected7.low)}–${euros(intel.expected7.high)}` : '—'}</strong>
+          <strong>{intel.expected7 ? `${money(intel.expected7.low)}–${money(intel.expected7.high)}` : '—'}</strong>
         </div>
         <div>
           <span className="section-kicker">In 21 days</span>
-          <strong>{intel.expected21 ? `${euros(intel.expected21.low)}–${euros(intel.expected21.high)}` : '—'}</strong>
+          <strong>{intel.expected21 ? `${money(intel.expected21.low)}–${money(intel.expected21.high)}` : '—'}</strong>
         </div>
         <div>
           <span className="section-kicker">Track record</span>
@@ -157,7 +159,7 @@ export default function Intel({ origin, destination, travelDate, currentPrice }:
       ))}
       {intel.downside !== undefined ? (
         <p className="intel-downside">
-          {Math.round(intel.downside)}% of past weeks would have taken this fare below {euros(p10)}.
+          {Math.round(intel.downside)}% of past weeks would have taken this fare below {money(p10)}.
         </p>
       ) : null}
       {intel.changeMyMind ? <p className="intel-downside">{intel.changeMyMind}</p> : null}
