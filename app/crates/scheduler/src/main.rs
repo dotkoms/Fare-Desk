@@ -2,6 +2,7 @@ use std::process::ExitCode;
 
 use chrono::Utc;
 use faredesk_scheduler::{Collector, Watchlist};
+use faredesk_sources::kiwi::KiwiSource;
 use faredesk_sources::serpapi::SerpApiSource;
 use faredesk_sources::Source;
 use faredesk_store::Store;
@@ -65,42 +66,54 @@ async fn main() -> ExitCode {
         }
     };
 
-    let Some(key) = std::env::var("SERPAPI_KEY")
-        .ok()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-    else {
-        eprintln!(
-            "SERPAPI_KEY is required: the collector never writes fixture prices into fare history."
-        );
-        return ExitCode::from(1);
-    };
-
     let client = reqwest::Client::builder()
         .user_agent("FareDesk-Collector/0.1")
-        .timeout(std::time::Duration::from_secs(30))
+        .timeout(std::time::Duration::from_secs(60))
         .build()
         .unwrap_or_default();
-    let mut source = SerpApiSource::new(
-        client,
-        key,
-        store.providers.clone(),
-        store.reference.place_map(),
-    );
-    if let Ok(base_url) = std::env::var("SERPAPI_BASE_URL") {
-        if !base_url.trim().is_empty() {
-            source = source.with_base_url(base_url);
-        }
-    }
+    let places = store.reference.place_map();
 
-    let daily_limit = std::env::var("SERPAPI_DAILY_LIMIT")
-        .ok()
-        .and_then(|value| value.parse().ok())
-        .unwrap_or(100);
+    // Kiwi.com by default: live fares with no key. SerpAPI only when asked for
+    // with COLLECTOR_SOURCE=serpapi and a key. Fixture prices are never collected.
+    let use_serpapi =
+        std::env::var("COLLECTOR_SOURCE").is_ok_and(|value| value.trim() == "serpapi");
+    let (source, daily_limit) = if use_serpapi {
+        let Some(key) = std::env::var("SERPAPI_KEY")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+        else {
+            eprintln!("COLLECTOR_SOURCE=serpapi needs SERPAPI_KEY.");
+            return ExitCode::from(1);
+        };
+        let mut source = SerpApiSource::new(client, key, store.providers.clone(), places);
+        if let Ok(base_url) = std::env::var("SERPAPI_BASE_URL") {
+            if !base_url.trim().is_empty() {
+                source = source.with_base_url(base_url);
+            }
+        }
+        let limit = std::env::var("SERPAPI_DAILY_LIMIT")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(100);
+        (Source::SerpApi(source), limit)
+    } else {
+        let mut source = KiwiSource::new(client, places);
+        if let Ok(url) = std::env::var("KIWI_MCP_URL") {
+            if !url.trim().is_empty() {
+                source = source.with_url(url);
+            }
+        }
+        let limit = std::env::var("KIWI_DAILY_LIMIT")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(1000);
+        (Source::Kiwi(source), limit)
+    };
 
     let collector = Collector {
         store,
-        source: Source::SerpApi(source),
+        source,
         currency: watchlist.currency.clone(),
         adults: 1,
         daily_limit,

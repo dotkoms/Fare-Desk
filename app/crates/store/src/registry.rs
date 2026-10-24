@@ -58,6 +58,19 @@ pub fn data_cards(airports_updated_at: DateTime<Utc>, airports_source: String) -
             ],
         ),
         card(
+            "fares-kiwi",
+            Dataset::Fares,
+            "Kiwi.com flight search (official MCP server)",
+            "Kiwi.com terms of use",
+            "Live Kiwi.com results from the public MCP server Kiwi.com publishes for agents; no key. Prices are for the whole party with the requested checked and cabin bags included, and are fetched at search time.",
+            release,
+            &[
+                "Protected connections only: Kiwi does not flag self-transfers per result, so they are not requested.",
+                "Kiwi.com sells the ticket; fare rules are not provided and are confirmed on Kiwi.com.",
+                "The app redirects to Kiwi.com; it does not book.",
+            ],
+        ),
+        card(
             "fares-serpapi",
             Dataset::Fares,
             "SerpAPI Google Flights",

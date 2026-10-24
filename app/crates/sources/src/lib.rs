@@ -5,6 +5,7 @@ pub mod climate;
 #[cfg(any(test, feature = "test-fixtures"))]
 pub mod fixtures;
 pub mod ground;
+pub mod kiwi;
 pub mod reference_data;
 pub mod serpapi;
 pub mod transit;
@@ -50,6 +51,7 @@ impl ResolvedQuery<'_> {
 pub enum Source {
     #[cfg(any(test, feature = "test-fixtures"))]
     Fixtures(fixtures::FixtureSource),
+    Kiwi(kiwi::KiwiSource),
     SerpApi(serpapi::SerpApiSource),
 }
 
@@ -58,6 +60,7 @@ impl Source {
         match self {
             #[cfg(any(test, feature = "test-fixtures"))]
             Self::Fixtures(source) => source.id(),
+            Self::Kiwi(source) => source.id(),
             Self::SerpApi(source) => source.id(),
         }
     }
@@ -66,18 +69,20 @@ impl Source {
         match self {
             #[cfg(any(test, feature = "test-fixtures"))]
             Self::Fixtures(source) => source.data_card_id(),
+            Self::Kiwi(source) => source.data_card_id(),
             Self::SerpApi(source) => source.data_card_id(),
         }
     }
 
     pub fn is_live(&self) -> bool {
-        matches!(self, Self::SerpApi(_))
+        matches!(self, Self::Kiwi(_) | Self::SerpApi(_))
     }
 
     pub async fn search(&self, query: &ResolvedQuery<'_>) -> Result<Vec<Offer>, SourceError> {
         match self {
             #[cfg(any(test, feature = "test-fixtures"))]
             Self::Fixtures(source) => source.search(query),
+            Self::Kiwi(source) => source.search(query).await,
             Self::SerpApi(source) => source.search(query).await,
         }
     }
@@ -93,6 +98,8 @@ impl Source {
         match self {
             #[cfg(any(test, feature = "test-fixtures"))]
             Self::Fixtures(source) => source.search(query),
+            // Kiwi.com sells from one storefront; it cannot be priced per market.
+            Self::Kiwi(source) => source.search(query).await,
             Self::SerpApi(source) => source.search_in_market(query, market, currency).await,
         }
     }

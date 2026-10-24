@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
 # Proves the live fare path end to end against a running data plane:
-#   1. the live source is configured,
+#   1. a live source is on (Kiwi.com by default, no key; SerpAPI if configured),
 #   2. a one-way search returns live, verified, priced itineraries,
 #   3. a return search returns both directions,
-#   4. the quota counted each call (1 for the one-way, 2 for the return).
+#   4. the daily counter recorded the searches (cache hits count nothing).
 #
-# Usage:  app/scripts/live-check.sh [API_BASE] [ORIGIN] [DESTINATION]
-#         defaults: http://127.0.0.1:8080 BER LIS
+# Usage:  app/scripts/live-check.sh [API_BASE] [ORIGIN] [DESTINATION] [CURRENCY]
+#         defaults: http://127.0.0.1:8080 JFK LAX USD
 #
-# Costs 3 metered searches. It never reads or prints the key.
+# Runs at most three live searches. It never reads or prints a key.
 set -euo pipefail
 
 API="${1:-http://127.0.0.1:8080}"
-FROM="${2:-BER}"
-TO="${3:-LIS}"
+FROM="${2:-JFK}"
+TO="${3:-LAX}"
+CURRENCY="${4:-USD}"
 
 if date -v+1d >/dev/null 2>&1; then
   OUT=$(date -v+45d +%Y-%m-%d)
@@ -26,36 +27,46 @@ fi
 json() { python3 -c "import json,sys; d=json.load(sys.stdin); print($1)"; }
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
-echo "Data plane: $API"
-health=$(curl -fsS "$API/healthz") || fail "data plane not reachable at $API"
-configured=$(echo "$health" | json "next(s for s in d['sources'] if s['id']=='serpapi')['configured']")
-[ "$configured" = "True" ] || fail "SERPAPI_KEY is not set on the data plane (put it in app/.env and restart)"
-used_before=$(echo "$health" | json "next(s for s in d['sources'] if s['id']=='serpapi').get('usedToday') or 0")
-limit=$(echo "$health" | json "next(s for s in d['sources'] if s['id']=='serpapi').get('dailyLimit')")
-echo "Live source configured; used today: $used_before of $limit"
+echo "Data plane: ${API}"
+health=$(curl -fsS "${API}/healthz") || fail "data plane not reachable at ${API}"
+SOURCE=$(echo "$health" | json "next((s['id'] for s in sorted(d['sources'], key=lambda s: s['id'] != 'kiwi') if s['live'] and s['configured']), '')")
+[ -n "$SOURCE" ] || fail "no live fare source is on (is KIWI=off set?)"
+usage() { echo "$1" | json "next(s for s in d['sources'] if s['id']=='${SOURCE}').get('usedToday') or 0"; }
+used_before=$(usage "$health")
+echo "Live source: ${SOURCE}; searches today: ${used_before}"
 
 search() {
-  curl -sS -X POST "$API/api/search" -H 'content-type: application/json' -d "$1"
+  curl -sS -X POST "${API}/api/search" -H 'content-type: application/json' -d "$1"
+}
+body() {
+  local return_field=""
+  [ -n "${1:-}" ] && return_field="\"returnDate\":\"$1\","
+  echo "{\"origin\":\"${FROM}\",\"destination\":\"${TO}\",\"departDate\":\"${OUT}\",${return_field}\"adults\":1,\"checkedBags\":0,\"currency\":\"${CURRENCY}\"}"
 }
 
 echo "One-way ${FROM}→${TO} on ${OUT}…"
-oneway=$(search "{\"origin\":\"$FROM\",\"destination\":\"$TO\",\"departDate\":\"$OUT\",\"adults\":1,\"checkedBags\":0,\"currency\":\"EUR\"}")
-echo "$oneway" | json "d.get('error') and sys.exit('API error: '+d['error']['message'])" >/dev/null || fail "$(echo "$oneway" | json "d['error']['message']")"
+oneway=$(search "$(body)")
+error=$(echo "$oneway" | json "(d.get('error') or {}).get('message', '')")
+[ -z "$error" ] || fail "$error"
 freshness=$(echo "$oneway" | json "d['provenance']['freshness']")
 count=$(echo "$oneway" | json "len(d['itineraries'])")
-[ "$freshness" = "live" ] || [ "$freshness" = "cached" ] || fail "expected live fares, got freshness=$freshness"
-[ "$count" -gt 0 ] || fail "no itineraries for ${FROM}→${TO} on $OUT"
+[ "$freshness" = "live" ] || [ "$freshness" = "cached" ] || fail "expected live fares, got freshness=${freshness}"
+[ "$count" -gt 0 ] || fail "no itineraries for ${FROM}→${TO} on ${OUT}"
 echo "$oneway" | json "all(i['verifiedAt'] and i['totalPrice']>0 for i in d['itineraries']) or sys.exit(1)" >/dev/null \
   || fail "an itinerary is unverified or has no price"
-echo "  $count itineraries, $freshness; cheapest: $(echo "$oneway" | json "min(d['itineraries'], key=lambda i:i['totalPrice'])['totalPrice']") EUR"
+cheapest=$(echo "$oneway" | json "min(d['itineraries'], key=lambda i:i['totalPrice'])['totalPrice']")
+seller=$(echo "$oneway" | json "min(d['itineraries'], key=lambda i:i['totalPrice'])['providerName']")
+echo "  ${count} itineraries (${freshness}); cheapest ${cheapest} ${CURRENCY} on ${seller}"
 
 echo "Return ${FROM}⇄${TO}, ${OUT} / ${BACK}…"
-roundtrip=$(search "{\"origin\":\"$FROM\",\"destination\":\"$TO\",\"departDate\":\"$OUT\",\"returnDate\":\"$BACK\",\"adults\":1,\"checkedBags\":0,\"currency\":\"EUR\"}")
+roundtrip=$(search "$(body "$BACK")")
+error=$(echo "$roundtrip" | json "(d.get('error') or {}).get('message', '')")
+[ -z "$error" ] || fail "$error"
 out_count=$(echo "$roundtrip" | json "len(d.get('itineraries', []))")
 back_count=$(echo "$roundtrip" | json "len(d.get('returnItineraries', []))")
-[ "$back_count" -gt 0 ] || fail "no return flights ($(echo "$roundtrip" | json "d.get('provenance',{}).get('degradedReason') or d.get('error')"))"
-echo "  outbound $out_count, return $back_count"
+[ "$back_count" -gt 0 ] || fail "no return flights ($(echo "$roundtrip" | json "d['provenance'].get('degradedReason')"))"
+echo "  outbound ${out_count}, return ${back_count}"
 
-used_after=$(curl -fsS "$API/healthz" | json "next(s for s in d['sources'] if s['id']=='serpapi').get('usedToday') or 0")
-echo "Quota used today: ${used_before} → ${used_after} (cache hits cost nothing)"
+used_after=$(usage "$(curl -fsS "${API}/healthz")")
+echo "Searches today: ${used_before} → ${used_after}"
 echo "PASS: live fares work end to end."

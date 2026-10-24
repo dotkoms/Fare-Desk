@@ -2,7 +2,9 @@
 
 **Status:** plan, 23 October 2026. Nothing below is built unless it says so.
 
-**Where we are.** Demo data is gone from the product. The server binary carries no fares; the fixture inventory compiles only for tests. Without `SERPAPI_KEY`, search and Explore answer `source_not_configured`. The web app reads everything from the data plane: fares, airports, coordinates, the buy/wait verdict. So the app now shows real data or nothing, and today it shows nothing for fares.
+**Update 24 October 2026: live fares need no key.** The default fare source is now Kiwi.com's official public MCP server: no signup, no key, live prices on first run (`cargo run -p faredesk-api`). SerpAPI stays in the code but is used only when asked for by name. The SerpAPI steps and budget below are kept for that optional path; the collector and every surface below run on Kiwi.
+
+**Where we were.** Demo data is gone from the product. The server binary carries no fares; the fixture inventory compiles only for tests. Without `SERPAPI_KEY`, search and Explore answer `source_not_configured`. The web app reads everything from the data plane: fares, airports, coordinates, the buy/wait verdict. So the app now shows real data or nothing, and today it shows nothing for fares.
 
 This plan takes it from "nothing" to "real data on every surface", in order of what unblocks the most.
 

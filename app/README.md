@@ -8,7 +8,7 @@ app/
 ├─ crates/
 │  ├─ core/              contract types, pricing, fingerprint, ranking
 │  ├─ store/             embedded reference data, TTL cache, SQLite ledger
-│  ├─ sources/           SerpAPI, FX, holiday, climate and ground clients (test-only fixtures)
+│  ├─ sources/           Kiwi.com, SerpAPI, FX, holiday, climate and ground clients (test-only fixtures)
 │  ├─ scheduler/         daily fare-history collector
 │  └─ api/               Axum HTTP service
 ├─ data/
@@ -28,7 +28,7 @@ cp .env.example .env          # optional; every value has a default
 cargo run -p faredesk-api
 ```
 
-The service listens on `http://127.0.0.1:8080`. Fares need `SERPAPI_KEY`: without it, `/api/search` and `/api/explore` answer `400 source_not_configured`. Put the key in `app/.env` (gitignored, loaded at startup), then `scripts/live-check.sh` proves the live path with three metered searches. The server binary contains no demo fares; the fixture inventory in `crates/sources/src/fixtures.rs` compiles only for tests (`test-fixtures` feature).
+The service listens on `http://127.0.0.1:8080` and serves **live fares on first run with no key and no signup**: `/api/search` uses Kiwi.com's official public MCP server (`mcp.kiwi.com`). `scripts/live-check.sh` proves the live path in three searches. `KIWI=off` turns it off; SerpAPI remains available only when a request asks for `source=serpapi` and `SERPAPI_KEY` is set. The server binary contains no demo fares; the fixture inventory in `crates/sources/src/fixtures.rs` compiles only for tests (`test-fixtures` feature).
 
 The web app calls this service through the Vite dev proxy. If it is not running, the app shows an error; it has no fallback data.
 
@@ -85,7 +85,7 @@ curl -s -X POST "http://127.0.0.1:8080/api/search" \
 }
 ```
 
-`source` is `auto` or `serpapi`; both need `SERPAPI_KEY`.
+`source` is `auto` (Kiwi.com, no key), `kiwi`, or `serpapi` (needs `SERPAPI_KEY`).
 
 Every itinerary carries `totalPrice` for the party **including the requested checked bags**, a `priceBreakdown` that shows the fare and the bag component separately, the included bags, the fare rules, the redirect URL and `verifiedAt` (null when the source did not confirm the price).
 
@@ -135,12 +135,12 @@ It joins [OurAirports](https://ourairports.com/data/) (public domain: airports, 
 
 ## History collection
 
-`faredesk-collector` is the Step 4 collector. Once a day it runs one paid search per watched route, picks one travel date per route (rotating through that route's window), and keeps the cheapest offer priced for the party and bags in `data/watchlist.yaml`.
+`faredesk-collector` is the Step 4 collector. Once a day it runs one Kiwi.com search per watched route (no key), picks one travel date per route (rotating through that route's window), and keeps the cheapest offer priced for the party and bags in `data/watchlist.yaml`.
 
 ```bash
 cd app
 cp ../data/watchlist.example.yaml ../data/watchlist.yaml   # then edit
-cp .env.example .env                                       # add SERPAPI_KEY
+cp ../data/watchlist.nyc.yaml ../data/watchlist.yaml      # or the New York corridor
 cargo run -p faredesk-scheduler --bin faredesk-collector -- \
   --watchlist ../data/watchlist.yaml --dry-run
 ```
@@ -149,8 +149,8 @@ Drop `--dry-run` for a real pass. `--limit N` caps the number of source searches
 
 - One row per route, travel date and observation day: the daily minimum and the offer that produced it.
 - Re-running the same day skips routes already observed, so cron retries are safe.
-- The collector refuses to start without `SERPAPI_KEY`; fixture prices are never written into history.
-- It respects `SERPAPI_DAILY_LIMIT`, stops when the quota is spent (exit code 2), and logs a JSON report.
+- It searches Kiwi.com by default; `COLLECTOR_SOURCE=serpapi` with `SERPAPI_KEY` switches it. Fixture prices are never written into history.
+- It respects `KIWI_DAILY_LIMIT` (or `SERPAPI_DAILY_LIMIT`), stops when the cap is reached (exit code 2), starts one route further down the list each day, and logs a JSON report.
 
 In Docker, copy the example to `data/watchlist.yaml` and run the collection profile:
 
@@ -313,7 +313,7 @@ PORT=8080 DATABASE_PATH=/data/faredesk.sqlite ./target/release/faredesk-api
 
 - Mount `/data` (or set `DATABASE_PATH`) so the quota ledger and `fare_history` survive restarts.
 - Set `CORS_ORIGINS` to the deployed web origin; the defaults only cover local development.
-- The container runs as a non-root user and needs outbound HTTPS for SerpAPI, Frankfurter and Nager.Date.
+- The container runs as a non-root user and needs outbound HTTPS for Kiwi.com, Frankfurter and Nager.Date (and SerpAPI if enabled).
 - Rate limiting is on by default at 120 requests per client per minute (`RATE_LIMIT_PER_MINUTE`, `0` disables). Clients are keyed by `X-Forwarded-For`, then `X-Real-IP`, then the socket address; `/healthz` is exempt.
 - There is no authentication in this release. Put the service behind a proxy or a platform gateway before exposing it publicly.
 
@@ -327,11 +327,11 @@ cargo test          # 144 tests
 cargo clippy --all-targets
 ```
 
-The integration tests in `crates/api/tests/api.rs` run the real router against an in-memory store: places, a BER–LIS search against the test-only fixture source with bag pricing, a live round trip against a mock SerpAPI, the no-source refusal, cache hits, a dead source served from cache, a dead source without cache, quota exhaustion, validation errors and the data cards.
+The integration tests in `crates/api/tests/api.rs` run the real router against an in-memory store: places, a BER–LIS search against the test-only fixture source with bag pricing, live round trips against mock Kiwi and SerpAPI servers, the no-source refusal, cache hits, a dead source served from cache, a dead source without cache, quota exhaustion, validation errors and the data cards.
 
 ## Known limits in this step
 
-- **Returns are two one-way tickets.** A SerpAPI round trip returns only outbound segment detail while pricing the pair, so a search with `returnDate` runs two one-way searches (two metered calls, each cached) and answers with `itineraries` (outbound) and `returnItineraries` (destination back to origin), each priced on its own. True round-trip fares, which can be cheaper on the provider, are not priced yet.
+- **Returns are two one-way tickets.** A search with `returnDate` runs two one-way searches (two calls, each cached) and answers with `itineraries` (outbound) and `returnItineraries` (destination back to origin), each priced on its own. True round-trip fares, which can be cheaper on the provider, are not priced yet.
 - **Bag fees can be estimates.** When the source says a bag costs extra without naming the amount, the curated table in `core::pricing` is used and `bagFeeEstimated` is true.
 - **Children are priced at the adult fare.**
 - **Route coverage and Explore list only routes with recorded live fares.** A schedule feed is needed to list routes that have never been priced.

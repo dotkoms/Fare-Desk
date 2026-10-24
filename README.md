@@ -102,7 +102,7 @@ npm install
 npm run dev
 ```
 
-Fares need `SERPAPI_KEY`; without it the API says `source_not_configured` rather than serving demo fares. With a key it queries Google Flights through SerpAPI, caches for ten minutes, meters a daily quota and records the daily minimum in `fare_history`.
+Fares work on first run with no key: the API searches Kiwi.com through Kiwi's official public MCP server, caches for ten minutes, keeps a daily politeness cap and records the daily minimum in `fare_history`. SerpAPI (Google Flights) is optional and used only when asked for by name.
 
 Endpoints, provenance, cache and quota behaviour: [app/README.md](app/README.md).
 

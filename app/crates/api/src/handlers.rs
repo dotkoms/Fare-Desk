@@ -137,6 +137,15 @@ pub async fn health(State(state): State<AppState>) -> Json<Health> {
                 daily_limit: state.serpapi().map(|_| config.serpapi_daily_limit),
                 used_today: serpapi_used,
             },
+            SourceHealth {
+                id: "kiwi",
+                configured: state.kiwi().is_some(),
+                live: true,
+                daily_limit: state.kiwi().map(|_| config.kiwi_daily_limit),
+                used_today: state
+                    .kiwi()
+                    .and_then(|_| state.store().db.quota_used("kiwi", today).ok()),
+            },
         ],
     })
 }
@@ -205,7 +214,7 @@ pub async fn routes(
     let origin = resolve_place(&state, &origin_value)?;
     let limit = params.limit.unwrap_or(20).clamp(1, 100);
 
-    let live = state.serpapi().is_some();
+    let live = state.live_available();
     let observed = state
         .store()
         .db
@@ -640,7 +649,7 @@ async fn search_direction(
         match state
             .store()
             .db
-            .consume_quota(source.id(), today, state.config().serpapi_daily_limit)
+            .consume_quota(source.id(), today, state.daily_limit(source.id()))
         {
             Ok(QuotaOutcome::Granted { .. }) => {}
             Ok(QuotaOutcome::Exhausted { reset_on, .. }) => {
@@ -1036,7 +1045,7 @@ pub async fn explore(
             match state.store().db.consume_quota(
                 source.id(),
                 now().date_naive(),
-                state.config().serpapi_daily_limit,
+                state.daily_limit(source.id()),
             ) {
                 Ok(QuotaOutcome::Granted { .. }) => {}
                 Ok(QuotaOutcome::Exhausted { .. }) => {
@@ -1314,11 +1323,11 @@ pub async fn price_check(
 
     for market in &markets {
         if source.is_live() {
-            match state.store().db.consume_quota(
-                source.id(),
-                today,
-                state.config().serpapi_daily_limit,
-            ) {
+            match state
+                .store()
+                .db
+                .consume_quota(source.id(), today, state.daily_limit(source.id()))
+            {
                 Ok(QuotaOutcome::Granted { .. }) => {}
                 Ok(QuotaOutcome::Exhausted { .. }) => {
                     quota_exhausted = true;
@@ -2077,7 +2086,7 @@ pub async fn door_to_door(
             state.store().db.consume_quota(
                 source.id(),
                 now().date_naive(),
-                state.config().serpapi_daily_limit
+                state.daily_limit(source.id())
             ),
             Ok(QuotaOutcome::Granted { .. })
         )

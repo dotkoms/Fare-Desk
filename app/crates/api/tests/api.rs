@@ -390,7 +390,13 @@ async fn data_cards_expose_every_source() {
 
     let (status, body) = call(app(state()), "GET", "/api/data-card?dataset=fares", None).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["cards"].as_array().unwrap().len(), 1);
+    let fares: Vec<&str> = body["cards"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|card| card["id"].as_str().unwrap())
+        .collect();
+    assert_eq!(fares, vec!["fares-kiwi", "fares-serpapi"]);
 
     let (status, _) = call(app(state()), "GET", "/api/data-card?dataset=nope", None).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -1271,4 +1277,95 @@ async fn a_rejected_key_is_reported_as_configuration_not_an_outage() {
         .as_str()
         .unwrap()
         .contains("rejected the API key"));
+}
+
+/// A stand-in for Kiwi's MCP server: one nonstop per direction, as an event stream.
+async fn mock_kiwi() -> String {
+    use axum::routing::post;
+
+    async fn handler(axum::Json(request): axum::Json<Value>) -> impl axum::response::IntoResponse {
+        let args = &request["params"]["arguments"];
+        let from = args["flyFrom"].as_str().unwrap().to_string();
+        let to = args["flyTo"].as_str().unwrap().to_string();
+        let (day, month, year) = {
+            let date = args["departureDate"].as_str().unwrap();
+            (&date[0..2], &date[3..5], &date[6..10])
+        };
+        let iso = format!("{year}-{month}-{day}");
+        let structured = json!({
+            "currency": args["currency"],
+            "itineraries": [{
+                "price": if from == "JFK" { 300.0 } else { 260.0 },
+                "bookingUrl": "https://kiwi.com/u/test",
+                "baggage": { "cabinBag": 0, "checkedBag": 0 },
+                "outbound": { "durationSeconds": 22800, "segments": [{
+                    "from": from, "to": to,
+                    "departureTime": format!("{iso}T08:00:00"),
+                    "arrivalTime": format!("{iso}T11:20:00"),
+                    "durationSeconds": 22800, "carrier": "B6", "carrierName": "JetBlue Airways",
+                    "flightNumber": "B623", "cabinClass": "Economy" }] }
+            }],
+            "error": null
+        });
+        let envelope = json!({ "jsonrpc": "2.0", "id": 1,
+            "result": { "content": [], "isError": false, "structuredContent": structured } });
+        (
+            [(axum::http::header::CONTENT_TYPE, "text/event-stream")],
+            format!("event: message\ndata: {envelope}\n\n"),
+        )
+    }
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, axum::Router::new().route("/", post(handler)))
+            .await
+            .unwrap();
+    });
+    format!("http://{addr}/")
+}
+
+#[tokio::test]
+async fn kiwi_answers_by_default_with_no_key() {
+    let url = mock_kiwi().await;
+    let state = AppState::in_memory(Config {
+        ground_routing: false,
+        transit_routing: false,
+        kiwi_enabled: true,
+        kiwi_url: Some(url),
+        ..Config::default()
+    })
+    .expect("state");
+    let mut body = search_body("JFK", "LAX");
+    body["currency"] = json!("USD");
+    let back = (Utc::now().date_naive() + ChronoDuration::days(67))
+        .format("%Y-%m-%d")
+        .to_string();
+    body["returnDate"] = json!(back);
+
+    let (status, body) = call(app(state.clone()), "POST", "/api/search", Some(body)).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["provenance"]["dataCardId"], "fares-kiwi");
+    assert_eq!(body["provenance"]["freshness"], "live");
+    let outbound = &body["itineraries"][0];
+    assert_eq!(outbound["totalPrice"], 300.0);
+    assert_eq!(outbound["currency"], "USD");
+    assert_eq!(outbound["providerName"], "Kiwi.com");
+    assert_eq!(outbound["providerUrl"], "https://kiwi.com/u/test");
+    assert_eq!(outbound["segments"][0]["serviceNumber"], "B6 23");
+    assert_eq!(body["returnItineraries"][0]["totalPrice"], 260.0);
+    assert_eq!(
+        body["returnItineraries"][0]["segments"][0]["from"]["code"],
+        "LAX"
+    );
+
+    let (_, health) = call(app(state), "GET", "/healthz", None).await;
+    let kiwi = health["sources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|source| source["id"] == "kiwi")
+        .unwrap();
+    assert_eq!(kiwi["configured"], true);
+    assert_eq!(kiwi["usedToday"], 2, "{health}");
 }

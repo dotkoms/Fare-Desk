@@ -9,6 +9,8 @@ services:
     environment:
       PORT: 8080
       DATABASE_PATH: /data/faredesk.sqlite
+      KIWI: ${KIWI:-on}
+      KIWI_DAILY_LIMIT: ${KIWI_DAILY_LIMIT:-1000}
       SERPAPI_KEY: ${SERPAPI_KEY:-}
       SERPAPI_DAILY_LIMIT: ${SERPAPI_DAILY_LIMIT:-100}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173}
@@ -27,6 +29,7 @@ services:
     command: ["faredesk-collector", "--watchlist", "/config/watchlist.yaml"]
     environment:
       DATABASE_PATH: /data/faredesk.sqlite
+      KIWI_DAILY_LIMIT: ${KIWI_DAILY_LIMIT:-1000}
       SERPAPI_KEY: ${SERPAPI_KEY:-}
       SERPAPI_DAILY_LIMIT: ${SERPAPI_DAILY_LIMIT:-100}
       RUST_LOG: ${RUST_LOG:-faredesk_scheduler=info}

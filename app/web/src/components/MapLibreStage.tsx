@@ -459,8 +459,9 @@ export default function MapLibreStage({ itineraries, selectedId, onSelect, origi
   if (!webgl) return <GlobeFallback />
 
   const showSky = horizon !== null && horizon > -40
-  // Clouds grow from the horizon but never up into the route title and price above them.
-  const cloudRoom = horizon === null ? 0 : Math.max(0, Math.min(1, (horizon - TITLE_BAND) / 160))
+  // Clouds grow from the horizon but their tops never reach the route title and price.
+  const cloudScale = (height: number) =>
+    horizon === null ? 0 : Math.max(0, Math.min(1, (horizon + 30 - TITLE_BAND) / height))
 
   return (
     <div className="nagai-stage">
@@ -487,14 +488,14 @@ export default function MapLibreStage({ itineraries, selectedId, onSelect, origi
             width={360}
             height={280}
             puffs={CUMULUS_LEFT}
-            scale={cloudRoom}
+            scale={cloudScale(280)}
           />
           <Cumulus
             className="nagai-cumulus nagai-cumulus-right"
             width={190}
             height={170}
             puffs={CUMULUS_RIGHT}
-            scale={cloudRoom * 0.8}
+            scale={cloudScale(170) * 0.8}
           />
         </div>
       ) : null}

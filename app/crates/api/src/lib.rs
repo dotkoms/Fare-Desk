@@ -18,6 +18,7 @@ use tower_http::trace::TraceLayer;
 use faredesk_core::SearchQuery;
 use faredesk_sources::climate::ClimateClient;
 use faredesk_sources::ground::GroundClient;
+use faredesk_sources::kiwi::KiwiSource;
 use faredesk_sources::reference_data::ReferenceClient;
 use faredesk_sources::serpapi::SerpApiSource;
 use faredesk_sources::transit::TransitClient;
@@ -37,6 +38,7 @@ struct Inner {
     store: Store,
     config: Config,
     fixtures: Option<Arc<Source>>,
+    kiwi: Option<Arc<Source>>,
     serpapi: Option<Arc<Source>>,
     reference_client: ReferenceClient,
     climate_client: ClimateClient,
@@ -72,6 +74,7 @@ impl AppState {
                 store,
                 config,
                 fixtures: fixtures.map(Arc::new),
+                kiwi: None,
                 serpapi: serpapi.map(Arc::new),
                 reference_client: ReferenceClient::new(),
                 climate_client: ClimateClient::new(),
@@ -91,6 +94,13 @@ impl AppState {
         // Present only in test builds: the server binary has no demo fares.
         let fixtures =
             faredesk_sources::fixture_source(places.clone(), providers.clone()).map(Arc::new);
+        let kiwi = config.kiwi_enabled.then(|| {
+            let mut source = KiwiSource::new(client.clone(), places.clone());
+            if let Some(url) = &config.kiwi_url {
+                source = source.with_url(url);
+            }
+            Arc::new(Source::Kiwi(source))
+        });
         let serpapi = config.serpapi_key.as_ref().map(|key| {
             let mut source = SerpApiSource::new(client.clone(), key, providers, places);
             if let Some(base_url) = &config.serpapi_base_url {
@@ -105,6 +115,7 @@ impl AppState {
                 store,
                 config,
                 fixtures,
+                kiwi,
                 serpapi,
                 reference_client: ReferenceClient::new(),
                 climate_client: ClimateClient::new(),
@@ -133,6 +144,23 @@ impl AppState {
         self.inner.serpapi.as_deref()
     }
 
+    pub fn kiwi(&self) -> Option<&Source> {
+        self.inner.kiwi.as_deref()
+    }
+
+    /// True when some live fare source can answer now.
+    pub fn live_available(&self) -> bool {
+        self.inner.kiwi.is_some() || self.inner.serpapi.is_some()
+    }
+
+    /// The daily search cap for a source: Kiwi's politeness cap or the SerpAPI quota.
+    pub fn daily_limit(&self, source_id: &str) -> u32 {
+        match source_id {
+            "kiwi" => self.inner.config.kiwi_daily_limit,
+            _ => self.inner.config.serpapi_daily_limit,
+        }
+    }
+
     pub fn reference_client(&self) -> &ReferenceClient {
         &self.inner.reference_client
     }
@@ -157,32 +185,41 @@ impl AppState {
         self.inner.started_at
     }
 
-    /// Resolve the requested source. `None` or `auto` means the live source. A server
-    /// build has no other: without SERPAPI_KEY it says so instead of inventing fares.
+    /// Resolve the requested source. `None` or `auto` means Kiwi.com, which needs no
+    /// key; SerpAPI only when asked for by name and configured.
     pub fn source(&self, requested: Option<&str>) -> Result<Arc<Source>, ApiError> {
-        let not_configured = || {
-            ApiError::bad_request(
-                "source_not_configured",
-                "No live fare source is configured. Set SERPAPI_KEY on the data plane.",
-            )
-        };
+        let not_configured =
+            |message: &str| ApiError::bad_request("source_not_configured", message.to_string());
         match requested.map(str::trim) {
             None | Some("") | Some("auto") => self
                 .inner
+                .kiwi
+                .clone()
+                .or_else(|| self.inner.serpapi.clone())
+                .or_else(|| self.inner.fixtures.clone())
+                .ok_or_else(|| {
+                    not_configured(
+                        "No live fare source is enabled. Remove KIWI=off to search Kiwi.com.",
+                    )
+                }),
+            Some("kiwi") => self
+                .inner
+                .kiwi
+                .clone()
+                .ok_or_else(|| not_configured("Kiwi.com search is turned off (KIWI=off).")),
+            Some("serpapi") => self
+                .inner
                 .serpapi
                 .clone()
-                .or_else(|| self.inner.fixtures.clone())
-                .ok_or_else(not_configured),
-            Some("serpapi") => self.inner.serpapi.clone().ok_or_else(not_configured),
-            Some("fixtures") => self.inner.fixtures.clone().ok_or_else(|| {
-                ApiError::bad_request(
-                    "source_not_configured",
-                    "Demo fares are not part of this build.",
-                )
-            }),
+                .ok_or_else(|| not_configured("SerpAPI is not configured (SERPAPI_KEY).")),
+            Some("fixtures") => self
+                .inner
+                .fixtures
+                .clone()
+                .ok_or_else(|| not_configured("Demo fares are not part of this build.")),
             Some(other) => Err(ApiError::bad_request(
                 "unknown_source",
-                format!("Unknown source {other:?}. Use auto or serpapi."),
+                format!("Unknown source {other:?}. Use auto, kiwi or serpapi."),
             )),
         }
     }
@@ -192,6 +229,7 @@ impl std::fmt::Debug for AppState {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("AppState")
+            .field("kiwi_enabled", &self.inner.kiwi.is_some())
             .field("serpapi_configured", &self.inner.serpapi.is_some())
             .field("started_at", &self.inner.started_at)
             .finish()

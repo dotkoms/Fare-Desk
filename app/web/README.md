@@ -5,9 +5,9 @@ The React app: search console, results, the MapLibre globe stage and the route d
 ## Run
 
 ```bash
-# terminal 1 — data plane (needs SERPAPI_KEY for fares)
+# terminal 1 — data plane (live Kiwi.com fares, no key needed)
 cd ..
-SERPAPI_KEY=... cargo run -p faredesk-api        # http://127.0.0.1:8080
+cargo run -p faredesk-api        # http://127.0.0.1:8080
 
 # terminal 2 — web
 npm install
@@ -35,7 +35,7 @@ Every itinerary shows `Verified N min ago` only when the source provided a verif
 
 ## Failure behaviour
 
-- **No live fare source:** the data plane answers `source_not_configured`; the app shows that message and no fares.
+- **No live fare source** (only if `KIWI=off`): the data plane answers `source_not_configured`; the app shows that message and no fares.
 - **Data plane unreachable:** an error with a retry. Nothing is invented.
 - **4xx from the data plane** (bad date, unknown airport): the message is shown with a retry.
 - **Return leg fails:** the outbound still shows; the notice names the problem.
