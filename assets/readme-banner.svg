@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="340" viewBox="0 0 1200 340" role="img" aria-labelledby="title desc">
+  <title id="title">Fare Desk — Find the fare. Make the call.</title>
+  <desc id="desc">A blue globe with illustrated flight paths on a light grid. Decorative project branding, not a map of live fares or route coverage.</desc>
+  <defs>
+    <linearGradient id="paper" x2="1" y2="1"><stop stop-color="#f6f8fb"/><stop offset="1" stop-color="#edf2f7"/></linearGradient>
+    <radialGradient id="glow"><stop stop-color="#0b6e99" stop-opacity=".1"/><stop offset="1" stop-color="#0b6e99" stop-opacity="0"/></radialGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#0b1b2b" stroke-opacity=".045"/></pattern>
+    <clipPath id="globe"><circle cx="972" cy="170" r="116"/></clipPath>
+  </defs>
+  <rect x="1" y="1" width="1198" height="338" rx="20" fill="url(#paper)" stroke="#d6dee7"/>
+  <rect x="16" y="16" width="1168" height="308" rx="12" fill="url(#grid)"/>
+  <circle cx="972" cy="170" r="165" fill="url(#glow)"/>
+  <g font-family="SFMono-Regular,Consolas,Liberation Mono,monospace">
+    <path d="M64 56H96" stroke="#0b6e99" stroke-width="3"/>
+    <text x="112" y="61" font-size="12" letter-spacing="2" fill="#4a5a6a">FLIGHT INTELLIGENCE / OPEN SOURCE</text>
+    <text x="60" y="161" font-size="78" font-weight="700" letter-spacing="-3" fill="#0b1b2b">FARE DESK</text>
+    <text x="64" y="215" font-size="22" fill="#0b6e99">Find the fare. Make the call.</text>
+    <text x="64" y="250" font-size="14" fill="#4a5a6a">Routes, real prices, and the history behind them.</text>
+    <text x="64" y="298" font-size="11" letter-spacing="2.2" fill="#4a5a6a">RUST / REACT / SQLITE</text>
+  </g>
+  <g fill="none" stroke="#0b6e99">
+    <circle cx="972" cy="170" r="116" stroke-opacity=".4"/>
+    <g clip-path="url(#globe)" stroke-opacity=".17">
+      <ellipse cx="972" cy="170" rx="76" ry="116"/>
+      <ellipse cx="972" cy="170" rx="34" ry="116"/>
+      <ellipse cx="972" cy="170" rx="116" ry="39"/>
+      <ellipse cx="972" cy="170" rx="116" ry="80"/>
+      <path d="M844 170H1100M972 43V297"/>
+    </g>
+    <path d="M839 228Q902 40 1029 100" stroke-width="2" stroke-dasharray="5 6" stroke-opacity=".65"/>
+    <path d="M839 228Q990 106 1110 202" stroke-width="2" stroke-opacity=".8"/>
+    <path d="M1029 100Q1122 99 1110 202" stroke-opacity=".3"/>
+    <g fill="#f6f8fb" stroke-width="2"><circle cx="839" cy="228" r="6"/><circle cx="1029" cy="100" r="6"/><circle cx="1110" cy="202" r="6"/></g>
+    <circle cx="839" cy="228" r="13" stroke-opacity=".15"/>
+    <path d="M810 73V49H834M1110 291H1134V267" stroke-opacity=".5" stroke-width="2"/>
+  </g>
+  <circle cx="1029" cy="100" r="14" fill="#b54708" fill-opacity=".08"/>
+  <circle cx="1029" cy="100" r="4" fill="#b54708"/>
+  <path d="M970 151l18 8-18 8 4-8z" fill="#0b6e99" transform="rotate(10 979 159)"/>
+</svg>

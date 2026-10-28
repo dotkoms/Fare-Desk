@@ -1,112 +1,170 @@
-# Fare Desk
+<p align="center">
+  <img src="assets/readme-banner.svg" alt="Fare Desk — Find the fare. Make the call." width="100%">
+</p>
 
-**Repository:** `dotkoms/Fare-Desk`
+<h1 align="center">Fare Desk</h1>
+<p align="center">A flight finder and fare-intelligence workbench, built with Rust and React.</p>
 
-A field manual for paying less for planes, trains and coaches — the data sources that actually exist, which ones need an API and which need scraping, when to buy, what is live right now, and a multi-agent setup that watches it all.
+<p align="center">
+  <a href="https://github.com/dotkoms/Fare-Desk/actions/workflows/ci.yml"><img src="https://github.com/dotkoms/Fare-Desk/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="app/Cargo.toml"><img src="https://img.shields.io/badge/backend-Rust-dea584?style=flat-square&amp;logo=rust" alt="Rust backend"></a>
+  <a href="app/web/package.json"><img src="https://img.shields.io/badge/interface-React-0b6e99?style=flat-square&amp;logo=react" alt="React interface"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/code-GPL--3.0-0b6e99?style=flat-square" alt="Code: GPL-3.0"></a>
+  <a href="#project-status"><img src="https://img.shields.io/badge/status-active_development-4a5a6a?style=flat-square" alt="Active development"></a>
+</p>
 
-**Research snapshot:** 22 October 2026. Access terms, prices and deals change constantly; every source and caveat is documented rather than assumed.
+<p align="center">
+  <a href="#quickstart">Quickstart</a> ·
+  <a href="#whats-built">What's built</a> ·
+  <a href="#architecture">Architecture</a> ·
+  <a href="#field-guide">Field guide</a> ·
+  <a href="#roadmap">Roadmap</a> ·
+  <a href="#contributing">Contributing</a>
+</p>
 
 ---
 
-## Start here
+**Find flights, compare the full trip cost, and see the history behind a buy-or-wait decision.**
+
+Fare Desk combines a map-based flight-search interface, a Rust data plane, and a research library
+for paying less for planes, trains and coaches. The application currently focuses on flights:
+search results, flexible dates, fare history, airport access and source provenance. Booking
+happens on the provider's site.
+
+The application code is open source. Fare data and some data assets have separate terms; see
+[licensing](#licence).
+
+## Project status
+
+**Functional prototype. Active development.**
+
+The React interface and Rust API run as separate services. The web app has no fallback fare
+data: if the API is unavailable, it shows an error. Search adapters are implemented for Kiwi.com
+and Skiplagged's public MCP endpoints without a project-supplied API key; SerpAPI is an optional
+keyed source. Availability, prices and coverage depend on the upstream service.
+
+History-based advice needs enough collected observations. Bag fees can be estimates, return
+results currently combine two one-way searches, and email delivery needs an external sender.
+The API has no built-in authentication; put it behind a suitable gateway before public exposure.
+See the [application guide](app/README.md) and [dated source audit](docs/25-data-sources-status.md)
+for behavior and coverage details.
+
+## What's built
+
+| Component | Current capability |
+| --- | --- |
+| Flight search | Kiwi.com and Skiplagged MCP adapters, deduplication, party/bag pricing and provider redirects; optional SerpAPI. |
+| Map interface | React and MapLibre interface for routes, search and itinerary results. |
+| Flexible dates | A per-day fare calendar backed by Skiplagged; prices remain indicative. |
+| Fare intelligence | Collected daily minima, route percentiles, seasonality and fare weather. Buy/wait advice stays insufficient below 14 observations. |
+| Trip context | Curated airport access, live routing adapters and door-to-door totals; availability varies by airport and region. |
+| Reliability | BTS ingestion and route/carrier on-time summaries when the relevant data has been imported. |
+| Point-of-sale screening | An API for comparing shortlisted itineraries across markets, with FX, payment eligibility and explicit limits. |
+| Price watches | Threshold/new-low evaluation, quiet hours, weekly caps and a JSON digest outbox; no bundled SMTP sender. |
+| Provenance and operations | Source/freshness metadata, SQLite history and quota tracking, caching, rate limiting and a containerized API. |
+| Research library | Sourced buying tactics, access notes and specialist agent instructions across air, rail, coach and awards. |
+
+## Quickstart
+
+You need Rust/Cargo and Node.js/npm. CI uses Node.js 22. Docker Compose is an alternative for
+the API; the web interface runs separately.
+
+```sh
+git clone https://github.com/dotkoms/Fare-Desk.git
+cd Fare-Desk
+```
+
+Start the data plane in one terminal:
+
+```sh
+cd app
+cargo run -p faredesk-api
+# API: http://127.0.0.1:8080
+```
+
+Start the web interface in another terminal, from the repository root:
+
+```sh
+cd app/web
+npm ci
+npm run dev
+# Open the local URL printed by Vite.
+```
+
+Or start the API with persistent SQLite storage through Compose:
+
+```sh
+# From the repository root; this starts the data plane.
+docker compose up --build
+```
+
+Optional source settings live in [`app/.env.example`](app/.env.example). The default fare
+adapters need outbound internet access. Source failures, stale cached answers and exhausted
+quotas are reported explicitly. See [API setup and endpoints](app/README.md) for configuration,
+collection jobs and deployment details.
+
+## Architecture
+
+```text
+React + MapLibre interface
+          │  Vite proxy in local development
+          ▼
+Rust / Axum API
+          ├── Fare adapters → normalize → deduplicate → rank
+          ├── SQLite → quota ledger, fare history, watches
+          └── Reference/context adapters → source + freshness metadata
+
+Scheduled jobs → daily fare minima → route intelligence + alert outbox
+```
+
+The price path is deterministic application code. Source records keep provenance and freshness
+attached; language models are not responsible for pricing or ranking.
+
+```text
+Fare-Desk/
+├── app/               Rust data plane, collector jobs and React interface
+├── docs/              Research, product plans, design and source records
+├── agents/            Specialist agent instructions
+├── data/              Watchlist templates
+└── PLAN.md            Product direction and build plan
+```
+
+## Field guide
+
+The research library covers more transport modes than the current application. Its original
+research snapshot is **22 October 2026**; individual files may contain later dated checks.
+Access terms and deal availability need verification against the linked sources.
 
 | If you want to… | Read |
 |---|---|
 | Get the six rules that explain most savings | [docs/00-short-version.md](docs/00-short-version.md) |
 | Know when to buy, by mode and region | [docs/05-when-to-buy.md](docs/05-when-to-buy.md) |
 | Know which apps have APIs and which need scraping | [docs/03-public-apis-vs-scraping.md](docs/03-public-apis-vs-scraping.md) |
-| See deals that are live now | [docs/06-live-deals.md](docs/06-live-deals.md) |
+| Read the dated deal snapshot | [docs/06-live-deals.md](docs/06-live-deals.md) |
 | Run the full tactic list | [docs/04-playbook.md](docs/04-playbook.md) |
 | Understand why fares behave this way | [docs/01-how-fares-are-priced.md](docs/01-how-fares-are-priced.md) |
 | Build the agent fleet | [docs/08-agent-fleet.md](docs/08-agent-fleet.md) and [agents/](agents/) |
 | Avoid wasting time on myths | [docs/07-myths.md](docs/07-myths.md) |
-| Build the flights-only 3D finder and buy/wait engine | [PLAN.md](PLAN.md) |
+| Read the flight finder and buy/wait product plan | [PLAN.md](PLAN.md) |
 | See the unique data layers and open-source playbook | [PLAN.md §10](PLAN.md#10-unique-data-and-visual-layers) and [§18](PLAN.md#18-standout-open-source-playbook) |
 | Solve cold start and Explore coverage | [docs/14-cold-start-and-coverage.md](docs/14-cold-start-and-coverage.md) |
-| Deploy the web on Vercel | [docs/15-hosting-on-vercel.md](docs/15-hosting-on-vercel.md) |
+| Review web hosting on Vercel | [docs/15-hosting-on-vercel.md](docs/15-hosting-on-vercel.md) |
 | Design the interface | [UI/UX](docs/16-ui-ux.md) · [design system](docs/17-design-system.md) · [colour](docs/18-color.md) |
 | Add gamification without dark patterns | [docs/19-gamification.md](docs/19-gamification.md) |
 | Understand users and competitors | [docs/20-users-and-competitors.md](docs/20-users-and-competitors.md) |
-| Build the globe with react-globe.gl | [docs/21-globe-implementation.md](docs/21-globe-implementation.md) |
+| Read the earlier globe implementation plan | [docs/21-globe-implementation.md](docs/21-globe-implementation.md) |
 | Replace it with a 2D poster map (Nagai direction) | [docs/23-2d-poster-map.md](docs/23-2d-poster-map.md) |
 | Plan the build step by step | [docs/22-build-planner.md](docs/22-build-planner.md) |
 | Decide what is an API and what needs a browser | [docs/12-rust-data-layer.md](docs/12-rust-data-layer.md) |
 | Check whether another storefront is cheaper | [docs/13-point-of-sale.md](docs/13-point-of-sale.md) |
 
-If you only do three things: search the whole week and every nearby airport, run a split-ticket check before buying rail, and price the trip door to door including bags and the hotel night you are replacing.
 
----
+If you only do three things: search the whole week and every nearby airport, run a split-ticket
+check before buying rail, and price the trip door to door including bags and the hotel night
+you are replacing.
 
-## The repository
-
-```
-fleet/
-├─ README.md
-├─ PLAN.md                         Flights-only 3D finder + buy/wait plan
-├─ docs/
-│  ├─ 00-short-version.md          Six rules and the highest-ROI moves
-│  ├─ 01-how-fares-are-priced.md   Fare buckets, unbundling, quota pricing, yield
-│  ├─ 02-data-sources.md           Every practical source, by mode
-│  ├─ 03-public-apis-vs-scraping.md API/scrape matrix and legal posture
-│  ├─ 04-playbook.md               Every tactic, with saving and catch
-│  ├─ 05-when-to-buy.md            Historical booking windows and seasonality
-│  ├─ 06-live-deals.md             Dated snapshot of live deals
-│  ├─ 07-myths.md                  What does not work
-│  ├─ 08-agent-fleet.md            Architecture, schemas, quotas, guardrails
-│  ├─ 09-build-order.md            Build it in phases
-│  ├─ 10-points-and-protections.md Points math, EU261, refunds, OTA risk
-│  ├─ 11-sources.md                Evidence and uncertainty
-│  ├─ 12-rust-data-layer.md        Rust feeds, API vs scrape, Obscura
-│  ├─ 13-point-of-sale.md          Storefront, currency and payment arbitrage
-│  ├─ 14-cold-start-and-coverage.md History seeding and current route coverage
-│  ├─ 15-hosting-on-vercel.md      Vercel split, data plane and costs
-│  ├─ 16-ui-ux.md                  Screens, flows, copy, accessibility
-│  ├─ 17-design-system.md          Type, layout, components, motion
-│  ├─ 18-color.md                  Palette, semantics, contrast
-│  ├─ 19-gamification.md           Ethical mechanics and metrics
-│  ├─ 20-users-and-competitors.md  Beachhead, personas, competitive gap
-│  ├─ 21-globe-implementation.md   react-globe.gl props, data and budgets
-│  ├─ 22-build-planner.md          Effort, gates, docs and agents per step
-│  └─ 23-2d-poster-map.md          Plan: 2D SVG map, poster palette, migration
-└─ agents/
-   ├─ README.md                    How to install the fleet
-   ├─ desk-ops.md
-   ├─ air-scout.md
-   ├─ rail-scout.md
-   ├─ coach-scout.md
-   ├─ arbitrage-analyst.md
-   ├─ fare-verifier.md
-   ├─ watchkeeper.md
-   └─ points-strategist.md
-```
-
----
-
-## Run the app
-
-The web app and the data plane are separate services. In development the web app calls the local data plane through the Vite proxy; it has no fallback data.
-
-```bash
-# data plane: places, fares, reference data
-cd app
-cargo run -p faredesk-api          # http://127.0.0.1:8080
-
-# or, from the repository root
-docker compose up --build          # same service, SQLite on a volume
-```
-
-```bash
-# web app
-cd app/web
-npm install
-npm run dev
-```
-
-Fares work on first run with no key: the API searches Kiwi.com and Skiplagged through their official public MCP servers, caches for ten minutes, keeps a daily politeness cap and records the daily minimum in `fare_history`. SerpAPI (Google Flights) is optional and used only when asked for by name.
-
-Endpoints, provenance, cache and quota behaviour: [app/README.md](app/README.md).
-
-## API or scrape?
+<details>
+<summary>Research snapshot: API or scrape?</summary>
 
 | Mode | Public self-serve price API? | Practical answer |
 |---|---|---|
@@ -118,13 +176,22 @@ Endpoints, provenance, cache and quota behaviour: [app/README.md](app/README.md)
 
 The full per-app matrix, including partner-only and closed services, is in [docs/03-public-apis-vs-scraping.md](docs/03-public-apis-vs-scraping.md).
 
----
 
-## The stack in one paragraph
+</details>
 
-Scan wide with free or cheap scrapers. Verify the shortlist with a stable paid source. Store every price in a ledger so “cheap” means below the route's own median. For air, Google Flights data via SerpAPI or SearchApi is the verification backbone, with fast-flights and Travelpayouts for discovery and baselines. For rail, there is no global fare API: use DB Timetables, National Rail Darwin, GTFS and the operators for schedules, and a retailer or the operator for prices. For coaches, FlixBus publishes schedules as GTFS but gates prices; BlaBlaCar Bus has a nominally open API; Omio is the practical multimodal retailer. Keep the language model out of the price path.
+## Roadmap
 
----
+| Area | Next work |
+| --- | --- |
+| Historical coverage | Schedule the collector and expand observed route/date coverage; let the history accumulate. |
+| Return pricing | Add native round-trip pricing instead of combining two one-way searches. |
+| Route discovery | Add schedule-backed destinations beyond routes with recorded fare history. |
+| Search breadth | Resolve connection details before expanding Skiplagged connection coverage. |
+| Context in the interface | Surface more reliability, seasonality and door-to-door information already available through the API. |
+| Hosting and notifications | Configure authentication/gateway controls, persistent jobs and an external mail sender for the intended environment. |
+
+The [build planner](docs/22-build-planner.md), [source audit](docs/25-data-sources-status.md) and
+[product plan](PLAN.md) retain the detailed sequence and remaining gates.
 
 ## Ground rules
 
@@ -134,6 +201,7 @@ Scan wide with free or cheap scrapers. Verify the shortlist with a stable paid s
 - **Link to the source.** Fetching public data is one risk; republishing airline fare content is the risk that cost Skiplagged $9.4M.
 - **Fares are not guaranteed until ticketed.** Mistake fares can be cancelled; “live” award results can be stale.
 - **Not legal advice.** Contracts of carriage and local rules still govern your ticket.
+
 
 ## Licence
 
@@ -145,6 +213,7 @@ Scan wide with free or cheap scrapers. Verify the shortlist with a stable paid s
 - **Security:** [SECURITY.md](SECURITY.md).
 
 GPL-3.0 requires source when the software is distributed. It does **not** require source for a hosted service. If that network protection becomes the priority, AGPL-3.0 is the alternative licence.
+
 
 ## Contributing
 
