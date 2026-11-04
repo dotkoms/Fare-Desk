@@ -587,11 +587,14 @@ pub async fn search(
     // Prefer a native round-trip from Kiwi when a return date is requested.
     // Fall back to two one-way searches for other sources or if the native call fails.
     let mut response = if query.return_date.is_some() {
-        match source.search_round_trip(&faredesk_sources::ResolvedQuery {
-            request: &query,
-            origin: &origin,
-            destination: &destination,
-        }).await {
+        match source
+            .search_round_trip(&faredesk_sources::ResolvedQuery {
+                request: &query,
+                origin: &origin,
+                destination: &destination,
+            })
+            .await
+        {
             Ok(Some(pairs)) if !pairs.is_empty() => {
                 // Build outbound from the first element of each pair (full RT price)
                 // and inbound from the second (price 0).
@@ -607,14 +610,27 @@ pub async fn search(
                 // calling the one-way machinery on the offers we already have.
                 // For simplicity we price them here via the existing helpers.
                 let mut outbound_response = price_and_rank_offers(
-                    &state, &source, &query, &origin, &destination, outbound_offers,
-                ).await?;
+                    &state,
+                    &source,
+                    &query,
+                    &origin,
+                    &destination,
+                    outbound_offers,
+                )
+                .await?;
                 if !inbound_offers.is_empty() {
                     let inbound_response = price_and_rank_offers(
-                        &state, &source, &query, &destination, &origin, inbound_offers,
-                    ).await?;
+                        &state,
+                        &source,
+                        &query,
+                        &destination,
+                        &origin,
+                        inbound_offers,
+                    )
+                    .await?;
                     outbound_response.return_itineraries = inbound_response.itineraries;
-                    outbound_response.provenance.sample_size += outbound_response.return_itineraries.len();
+                    outbound_response.provenance.sample_size +=
+                        outbound_response.return_itineraries.len();
                 }
                 outbound_response.provenance.notes.push(
                     "Priced as a native round-trip on Kiwi.com (full price on the outbound)."
@@ -2682,8 +2698,7 @@ async fn two_one_way_search(
         return_date: None,
         ..query.clone()
     };
-    let mut response =
-        search_direction(state, source, outbound_query, origin, destination).await?;
+    let mut response = search_direction(state, source, outbound_query, origin, destination).await?;
 
     if let Some(return_date) = query.return_date {
         let inbound_query = SearchQuery {
@@ -2740,7 +2755,11 @@ async fn price_and_rank_offers(
             let duration = offer.duration_minutes();
             let stops = offer.stops();
             Some(faredesk_core::Itinerary {
-                id: offer.segments.first().map(|s| s.id.clone()).unwrap_or_default(),
+                id: offer
+                    .segments
+                    .first()
+                    .map(|s| s.id.clone())
+                    .unwrap_or_default(),
                 segments: offer.segments,
                 total_price: total,
                 currency: offer.currency,
@@ -2780,4 +2799,3 @@ async fn price_and_rank_offers(
         },
     })
 }
-

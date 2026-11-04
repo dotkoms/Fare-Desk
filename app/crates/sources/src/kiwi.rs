@@ -120,9 +120,10 @@ impl KiwiSource {
             let Some(outbound) = self.map_itinerary(itinerary, query, travellers) else {
                 continue;
             };
-            let inbound = itinerary.inbound.as_ref().and_then(|leg| {
-                self.map_leg_as_offer(leg, itinerary, query, 0.0, true)
-            });
+            let inbound = itinerary
+                .inbound
+                .as_ref()
+                .and_then(|leg| self.map_leg_as_offer(leg, itinerary, query, 0.0, true));
             pairs.push((outbound, inbound));
         }
         Ok(pairs)
