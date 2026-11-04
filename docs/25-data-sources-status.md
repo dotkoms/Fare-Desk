@@ -44,7 +44,7 @@ Ordered by value per effort, keyless first.
 | # | Source | Key? | What it adds | Effort | Notes |
 |---|---|---|---|---|---|
 | 1 | **Daily collector schedule** | No | Fills When to buy, seasonality and fare weather | done | Example crontab in `app/scripts/crontab-example.txt`. Docker collect profile already exists. |
-| 2 | **US DOT Consumer Airfare Report** | No | Quarterly average fare per city pair: a labelled baseline for When to buy before our own 14 days exist | 1–2 days | Public CSV. Never presented as a daily series. |
+| 2 | **US DOT Consumer Airfare Report** | No | Quarterly average fare per city pair: a labelled baseline for When to buy before our own 14 days exist | script | Download script in `app/scripts/download-airfare-report.sh` (SODA API, public domain). |
 | 3 | **BTS T-100 segment data** | No | Which US routes fly and how busy they are: a real route list for Explore and coverage | 1–2 days | Same host as the on-time data; monthly. |
 | 4 | **Kiwi native round trips** | No | True return prices (can beat two one-ways) in one call | 1 day | Kiwi already pairs outbound and inbound in its results. |
 | 5 | **Skiplagged connections** | No | One-stop fares from Skiplagged | 1 day | Resolve the connection airport from the flight numbers via a schedule lookup, or ask Skiplagged's API for segment detail. Skip until that is reliable. |
