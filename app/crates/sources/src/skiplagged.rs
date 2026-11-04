@@ -70,6 +70,57 @@ impl SkiplaggedSource {
             .collect())
     }
 
+    /// Cheapest destinations from an origin on a date ("anywhere").
+    /// Returns a list of (destination, price) pairs. May be empty if the upstream returns nothing.
+    pub async fn anywhere(
+        &self,
+        origin: &str,
+        date: NaiveDate,
+    ) -> Result<Vec<(String, f64)>, SourceError> {
+        let structured = mcp::call_tool(
+            &self.client,
+            &self.url,
+            "skiplagged",
+            "sk_flights_search",
+            json!({
+                "origin": origin,
+                "destination": "anywhere",
+                "departureDate": date.format("%Y-%m-%d").to_string(),
+                "adults": 1,
+                "limit": 20,
+                "sort": "price",
+                "maxStops": "none",
+                "includeHiddenCity": false,
+                "includeVirtualInterlining": false,
+                "includeStandard": true,
+            }),
+            60,
+        )
+        .await?;
+        // Best-effort parse; structure may vary.
+        let flights = structured
+            .pointer("/flights")
+            .cloned()
+            .unwrap_or(Value::Array(Vec::new()));
+        let mut results = Vec::new();
+        if let Some(array) = flights.as_array() {
+            for item in array {
+                let dest = item
+                    .pointer("/arrival/airport")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let price = item
+                    .pointer("/price/amount")
+                    .and_then(|v| v.as_f64())
+                    .unwrap_or(0.0);
+                if !dest.is_empty() && price > 0.0 {
+                    results.push((dest.to_string(), price));
+                }
+            }
+        }
+        Ok(results)
+    }
+
     /// The cheapest one-way fare per departure day around `date`, in USD.
     pub async fn flex_calendar(
         &self,

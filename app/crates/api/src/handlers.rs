@@ -2544,6 +2544,68 @@ pub async fn airfare_baseline(
     }))
 }
 
+#[derive(Debug, Deserialize)]
+pub struct AnywhereParams {
+    pub from: Option<String>,
+    pub date: Option<NaiveDate>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnywhereResponse {
+    pub origin: String,
+    pub date: NaiveDate,
+    pub destinations: Vec<AnywhereRow>,
+    pub provenance: Provenance,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnywhereRow {
+    pub code: String,
+    pub price: f64,
+}
+
+/// Cheapest destinations from an origin via Skiplagged "anywhere" (keyless).
+pub async fn anywhere(
+    State(state): State<AppState>,
+    Query(params): Query<AnywhereParams>,
+) -> Result<Json<AnywhereResponse>, ApiError> {
+    let origin = resolve_place(&state, params.from.as_deref().unwrap_or_default())?;
+    let date = params
+        .date
+        .unwrap_or_else(|| now().date_naive() + chrono::Duration::days(30));
+
+    let Some(skiplagged) = state.skiplagged() else {
+        return Err(ApiError::bad_request(
+            "source_not_configured",
+            "Skiplagged is disabled.",
+        ));
+    };
+
+    let results = skiplagged
+        .anywhere(&origin.code, date)
+        .await
+        .map_err(|error| ApiError::unavailable(format!("skiplagged anywhere: {error}")))?;
+
+    let mut provenance = base_provenance("skiplagged-anywhere", "skiplagged", results.len());
+    if results.is_empty() {
+        provenance.notes.push(
+            "Skiplagged returned no anywhere results for this origin/date. Try another date or origin.".to_string(),
+        );
+    }
+
+    Ok(Json(AnywhereResponse {
+        origin: origin.code,
+        date,
+        destinations: results
+            .into_iter()
+            .map(|(code, price)| AnywhereRow { code, price })
+            .collect(),
+        provenance,
+    }))
+}
+
 pub async fn create_alert(
     State(state): State<AppState>,
     Json(body): Json<CreateAlertBody>,

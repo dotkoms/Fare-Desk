@@ -320,6 +320,7 @@ pub fn app(state: AppState) -> Router {
         .route("/door-to-door", get(handlers::door_to_door))
         .route("/reliability", get(handlers::reliability))
         .route("/airfare-baseline", get(handlers::airfare_baseline))
+        .route("/anywhere", get(handlers::anywhere))
         .route(
             "/alerts",
             get(handlers::list_alerts).post(handlers::create_alert),
