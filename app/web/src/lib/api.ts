@@ -260,3 +260,66 @@ export async function getFlexCalendar(
   const params = new URLSearchParams({ from, to, date })
   return request(`/api/flex-calendar?${params}`, { signal })
 }
+
+export type ReliabilityCarrier = {
+  carrier: string
+  onTimeRate: number | null
+  flights: number
+  adjustedPrice: number | null
+}
+
+export type ReliabilityResponse = {
+  route: string
+  carriers: ReliabilityCarrier[]
+  provenance: Provenance
+}
+
+export async function getReliability(
+  from: string,
+  to: string,
+  price?: number,
+  signal?: AbortSignal,
+): Promise<ReliabilityResponse> {
+  const params = new URLSearchParams({ from, to })
+  if (price !== undefined) params.set('price', String(price))
+  return request(`/api/reliability?${params}`, { signal })
+}
+
+export type DoorToDoorResponse = {
+  route: string
+  total: number
+  fare: number
+  transferCost: number
+  flightMinutes: number
+  transferMinutes: number
+  totalMinutes: number
+  provenance: Provenance
+}
+
+export async function getDoorToDoor(
+  from: string,
+  to: string,
+  date: string,
+  signal?: AbortSignal,
+): Promise<DoorToDoorResponse> {
+  const params = new URLSearchParams({ from, to, date })
+  return request(`/api/door-to-door?${params}`, { signal })
+}
+
+export type AirfareBaselineResponse = {
+  route: string
+  year: number | null
+  quarter: number | null
+  averageFare: number | null
+  carrier: string | null
+  provenance: Provenance
+}
+
+export async function getAirfareBaseline(
+  from: string,
+  to: string,
+  signal?: AbortSignal,
+): Promise<AirfareBaselineResponse> {
+  const params = new URLSearchParams({ from, to })
+  return request(`/api/airfare-baseline?${params}`, { signal })
+}

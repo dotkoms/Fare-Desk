@@ -2,6 +2,7 @@ import { Suspense, lazy } from 'react'
 import type { Itinerary } from '../types'
 import GlobeBoundary from './GlobeBoundary'
 import Intel from './Intel'
+import ContextPanel from './ContextPanel'
 import RouteBoard from './RouteBoard'
 import { formatDuration, formatMoney } from '../lib/format'
 
@@ -207,13 +208,22 @@ export default function Stage({
             </p>
           </div>
         ) : (
-          <Intel
-            origin={itinerary.segments[0].from.code}
-            destination={itinerary.segments[itinerary.segments.length - 1].to.code}
-            travelDate={travelDate}
-            currentPrice={itinerary.total}
-            currency={itinerary.currency}
-          />
+          <>
+            <Intel
+              origin={itinerary.segments[0].from.code}
+              destination={itinerary.segments[itinerary.segments.length - 1].to.code}
+              travelDate={travelDate}
+              currentPrice={itinerary.total}
+              currency={itinerary.currency}
+            />
+            <ContextPanel
+              origin={itinerary.segments[0].from.code}
+              destination={itinerary.segments[itinerary.segments.length - 1].to.code}
+              travelDate={travelDate}
+              price={itinerary.total}
+              currency={itinerary.currency}
+            />
+          </>
         )}
       </div>
     </section>
