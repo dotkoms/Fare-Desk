@@ -26,6 +26,10 @@ path = "src/alerts_main.rs"
 name = "faredesk-airfare-ingest"
 path = "src/airfare_main.rs"
 
+[[bin]]
+name = "faredesk-t100-ingest"
+path = "src/t100_main.rs"
+
 [dependencies]
 chrono.workspace = true
 csv = "1"

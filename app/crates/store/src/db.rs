@@ -144,6 +144,18 @@ impl Db {
 
             CREATE INDEX IF NOT EXISTS airfare_baselines_route ON airfare_baselines (origin, dest);
 
+            CREATE TABLE IF NOT EXISTS t100_routes (
+                origin     TEXT NOT NULL,
+                dest       TEXT NOT NULL,
+                year       INTEGER NOT NULL,
+                month      INTEGER NOT NULL,
+                passengers INTEGER NOT NULL,
+                flights    INTEGER,
+                PRIMARY KEY (origin, dest, year, month)
+            );
+
+            CREATE INDEX IF NOT EXISTS t100_routes_origin ON t100_routes (origin);
+
             CREATE TABLE IF NOT EXISTS watches (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 email       TEXT NOT NULL,
@@ -582,6 +594,51 @@ impl Db {
                  DO UPDATE SET fare = excluded.fare, passengers = excluded.passengers,
                                miles = excluded.miles, carrier = excluded.carrier",
                 params![origin, dest, year, quarter, fare, passengers, miles, carrier],
+            )?;
+        }
+        tx.commit()?;
+        Ok(rows.len())
+    }
+
+    /// Destinations that appear in T-100 for an origin (most recent month first).
+    pub fn t100_destinations(&self, origin: &str) -> Result<Vec<(String, i32, i32, i64)>, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(
+            "SELECT dest, year, month, SUM(passengers)
+             FROM t100_routes
+             WHERE origin = ?1
+             GROUP BY dest, year, month
+             ORDER BY year DESC, month DESC, SUM(passengers) DESC",
+        )?;
+        let rows = stmt
+            .query_map(params![origin], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i32>(1)?,
+                    r.get::<_, i32>(2)?,
+                    r.get::<_, i64>(3)?,
+                ))
+            })?
+            .filter_map(Result::ok)
+            .collect();
+        Ok(rows)
+    }
+
+    /// Upsert monthly T-100 origin-destination passenger counts.
+    pub fn record_t100_routes(
+        &self,
+        rows: &[(String, String, i32, i32, i64, Option<i64>)],
+    ) -> Result<usize, DbError> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        for (origin, dest, year, month, passengers, flights) in rows {
+            tx.execute(
+                "INSERT INTO t100_routes
+                 (origin, dest, year, month, passengers, flights)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                 ON CONFLICT(origin, dest, year, month)
+                 DO UPDATE SET passengers = excluded.passengers, flights = excluded.flights",
+                params![origin, dest, year, month, passengers, flights],
             )?;
         }
         tx.commit()?;

@@ -242,12 +242,39 @@ pub async fn routes(
             })
         })
         .collect();
+
+    // Supplement with T-100 schedule data when history is thin.
+    if summaries.len() < limit {
+        if let Ok(t100) = state.store().db.t100_destinations(&origin.code) {
+            let seen: std::collections::HashSet<_> = summaries
+                .iter()
+                .map(|s| s.destination.code.clone())
+                .collect();
+            for (code, _year, _month, _pax) in t100 {
+                if seen.contains(&code) {
+                    continue;
+                }
+                if let Some(destination) = state.store().reference.by_code(&code).cloned() {
+                    summaries.push(RouteSummary {
+                        origin: origin.clone(),
+                        destination,
+                        coverage: Coverage::None, // schedule only, not yet priced
+                        last_observed_at: None,
+                    });
+                    if summaries.len() >= limit {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     summaries.sort_by(|a, b| a.destination.code.cmp(&b.destination.code));
     summaries.truncate(limit);
 
-    let mut provenance = base_provenance("route-coverage", "fare-history", summaries.len());
+    let mut provenance = base_provenance("route-coverage", "fare-history+t100", summaries.len());
     provenance.notes = vec![format!(
-        "Routes from {} with recorded live fares; a schedule feed is needed to list routes never priced.",
+        "Routes from {} with recorded live fares, supplemented by BTS T-100 schedule data when ingested.",
         origin.code
     )];
     if !live {
