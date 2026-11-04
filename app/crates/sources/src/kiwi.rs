@@ -180,6 +180,10 @@ fn arguments(query: &ResolvedQuery<'_>) -> Value {
         "allow_self_transfer": false,
         "allow_diff_airport_connection": false,
     });
+    // Native round-trip: Kiwi prices outbound + inbound together when returnDate is set.
+    if let Some(ret) = request.return_date {
+        arguments["returnDate"] = json!(ret.format("%d/%m/%Y").to_string());
+    }
     if children > 0 {
         arguments["children_hold_bags"] = json!(vec![request.checked_bags.min(2); children]);
         arguments["children_hand_bags"] = json!(vec![request.carry_on_bags.min(1); children]);
