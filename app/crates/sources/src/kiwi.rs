@@ -82,6 +82,52 @@ impl KiwiSource {
             .collect())
     }
 
+    /// Search a native round trip. Returns (outbound, inbound) offer pairs.
+    /// The full round-trip price is placed on the outbound offer; the inbound
+    /// offer carries price 0 and a note that the price is included in the outbound.
+    /// Falls back to outbound-only offers when the source omits the inbound leg.
+    pub async fn search_round_trip(
+        &self,
+        query: &ResolvedQuery<'_>,
+    ) -> Result<Vec<(Offer, Option<Offer>)>, SourceError> {
+        let structured = mcp::call_tool(
+            &self.client,
+            &self.url,
+            "kiwi",
+            "search-flight",
+            arguments(query),
+            60,
+        )
+        .await?;
+        let result: KiwiResult = serde_json::from_value(structured)
+            .map_err(|error| SourceError::Parse(format!("kiwi itineraries: {error}")))?;
+        if let Some(error) = result.error.filter(|error| !error.is_empty()) {
+            return Err(SourceError::InvalidRequest(format!("kiwi: {error}")));
+        }
+        if !result
+            .currency
+            .eq_ignore_ascii_case(&query.request.currency)
+        {
+            return Err(SourceError::Parse(format!(
+                "kiwi priced in {} instead of {}",
+                result.currency, query.request.currency
+            )));
+        }
+
+        let travellers = f64::from(query.request.travellers());
+        let mut pairs = Vec::new();
+        for itinerary in &result.itineraries {
+            let Some(outbound) = self.map_itinerary(itinerary, query, travellers) else {
+                continue;
+            };
+            let inbound = itinerary.inbound.as_ref().and_then(|leg| {
+                self.map_leg_as_offer(leg, itinerary, query, 0.0, true)
+            });
+            pairs.push((outbound, inbound));
+        }
+        Ok(pairs)
+    }
+
     fn map_itinerary(
         &self,
         itinerary: &KiwiItinerary,
@@ -145,6 +191,79 @@ impl KiwiSource {
             warnings: vec![
                 "Sold by Kiwi.com; fare rules and the final price are confirmed there.".to_string(),
             ],
+        })
+    }
+
+    /// Map one leg (outbound or inbound) into an Offer.
+    /// When `is_inbound` is true the price is expected to be 0 and a note is added.
+    fn map_leg_as_offer(
+        &self,
+        leg: &KiwiLeg,
+        itinerary: &KiwiItinerary,
+        query: &ResolvedQuery<'_>,
+        price_per_traveller: f64,
+        is_inbound: bool,
+    ) -> Option<Offer> {
+        if leg.segments.is_empty() {
+            return None;
+        }
+        let mut segments = Vec::with_capacity(leg.segments.len());
+        for flight in &leg.segments {
+            let (Some(from), Some(to)) = (
+                self.lookup_place(&flight.from, query),
+                self.lookup_place(&flight.to, query),
+            ) else {
+                return None;
+            };
+            let depart = local_rfc3339(&from, &flight.departure_time).ok()?;
+            let arrive = local_rfc3339(&to, &flight.arrival_time).ok()?;
+            segments.push(Segment {
+                id: format!("{}-{}", flight.flight_number, depart),
+                marketing_carrier: flight.carrier_name.clone(),
+                operating_carrier: flight.carrier_name.clone(),
+                service_number: spaced_flight_number(&flight.carrier, &flight.flight_number),
+                from,
+                to,
+                depart_terminal: None,
+                arrive_terminal: None,
+                depart_local: depart,
+                arrive_local: arrive,
+                duration_minutes: flight.duration_seconds / 60,
+                aircraft: None,
+                cabin: cabin_from(&flight.cabin_class),
+                fare_class: None,
+            });
+        }
+
+        let request = query.request;
+        let mut warnings = vec![
+            "Sold by Kiwi.com; fare rules and the final price are confirmed there.".to_string(),
+        ];
+        if is_inbound {
+            warnings.push(
+                "Return leg of a native round-trip. The full price is on the outbound itinerary."
+                    .to_string(),
+            );
+        }
+        Some(Offer {
+            segments,
+            total_duration_minutes: Some(leg.duration_seconds / 60),
+            price_per_traveller,
+            currency: request.currency.to_uppercase(),
+            taxes_and_fees: None,
+            bags_included: Bags {
+                carry_on: request.carry_on_bags.max(itinerary.baggage.cabin_bag),
+                checked: request.checked_bags.max(itinerary.baggage.checked_bag),
+            },
+            bag_fee_per_checked_bag: None,
+            fare_family: None,
+            fare_rules: FareRules::default(),
+            provider_url: itinerary.booking_url.clone(),
+            provider_name: "Kiwi.com".to_string(),
+            source: self.id().to_string(),
+            verified_at: Some(Utc::now()),
+            risk: Vec::new(),
+            warnings,
         })
     }
 
@@ -265,6 +384,9 @@ struct KiwiItinerary {
     #[serde(default)]
     baggage: KiwiBaggage,
     outbound: KiwiLeg,
+    /// Present when the search included a returnDate.
+    #[serde(default)]
+    inbound: Option<KiwiLeg>,
 }
 
 #[derive(Debug, Default, Deserialize)]

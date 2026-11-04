@@ -89,6 +89,18 @@ impl Source {
         }
     }
 
+    /// Native round-trip search when the source supports it (currently Kiwi).
+    /// Returns (outbound, optional inbound) pairs. The full RT price is on the outbound.
+    pub async fn search_round_trip(
+        &self,
+        query: &ResolvedQuery<'_>,
+    ) -> Result<Option<Vec<(Offer, Option<Offer>)>>, SourceError> {
+        match self {
+            Self::Kiwi(source) => Ok(Some(source.search_round_trip(query).await?)),
+            _ => Ok(None),
+        }
+    }
+
     /// The same search priced in a country storefront. Fixtures are
     /// market-agnostic and return their one price table.
     pub async fn search_in_market(
