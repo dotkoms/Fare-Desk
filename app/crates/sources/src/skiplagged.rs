@@ -168,7 +168,14 @@ impl SkiplaggedSource {
             .attributes
             .iter()
             .any(|attribute| attribute == "standard");
-        if card.layovers != 0 || !standard || card.price.amount <= 0.0 {
+        // Allow nonstops always. Allow one-stop when the query permits stops;
+        // the connection airport is not in the Skiplagged card, so we emit a
+        // single segment with a warning rather than invent an intermediate point.
+        let allow_connection = query.request.max_stops.map(|m| m >= 1).unwrap_or(true);
+        if !standard || card.price.amount <= 0.0 {
+            return None;
+        }
+        if card.layovers > 1 || (card.layovers == 1 && !allow_connection) {
             return None;
         }
         if !card
@@ -220,10 +227,19 @@ impl SkiplaggedSource {
             source: self.id().to_string(),
             verified_at: Some(Utc::now()),
             risk: Vec::new(),
-            warnings: vec![
-                "Price from Skiplagged's search; confirm it and the bag terms on Skiplagged."
-                    .to_string(),
-            ],
+            warnings: {
+                let mut w = vec![
+                    "Price from Skiplagged's search; confirm it and the bag terms on Skiplagged."
+                        .to_string(),
+                ];
+                if card.layovers == 1 {
+                    w.push(
+                        "One-stop fare; Skiplagged does not name the connection airport in this result."
+                            .to_string(),
+                    );
+                }
+                w
+            },
         })
     }
 
@@ -249,12 +265,20 @@ fn search_arguments(query: &ResolvedQuery<'_>) -> Value {
         "limit": 30,
         "sort": "price",
         "fareClass": fare_class(request.cabin),
-        "maxStops": "none",
+        "maxStops": max_stops_arg(request.max_stops),
         // Standard fares only: no hidden-city tickets, no self-transfers.
         "includeHiddenCity": false,
         "includeVirtualInterlining": false,
         "includeStandard": true,
     })
+}
+
+fn max_stops_arg(max: Option<u8>) -> &'static str {
+    match max {
+        Some(0) => "none",
+        Some(1) => "one",
+        _ => "any",
+    }
 }
 
 /// "JFK-LAX-2026-12-08-trip=DL742~" → "DL 742". A nonstop has one flight.
