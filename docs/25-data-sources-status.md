@@ -50,7 +50,7 @@ Ordered by value per effort, keyless first.
 | 5 | **Skiplagged connections** | No | One-stop fares from Skiplagged | 1 day | Resolve the connection airport from the flight numbers via a schedule lookup, or ask Skiplagged's API for segment detail. Skip until that is reliable. |
 | 6 | **Skiplagged "anywhere"** | No | Explore candidates beyond our history | 0.5 day | Returned nothing in testing; retry with return dates and other origins before relying on it. |
 | 7 | **Wider airport access table** | No | Transfers and MCTs for the New York corridor airports | 1 day | Curated; label it so. |
-| 8 | **OpenSky** (anonymous) | No | Observed flights to sanity-check that a route is flying | 2 days | Rate-limited without an account; supporting signal only. |
+| 8 | **OpenSky** (anonymous) | No | Observed flights to sanity-check that a route is flying | notes | Brief notes in `app/scripts/opensky-notes.md`. Rate-limited free tier. |
 | 9 | **BTS DB1B** | No | 10% sample of real US ticket prices per quarter | 2 days | Large files; good priors and a check on our verdicts. |
 
 **Opt-in, keyed (never default):** SerpAPI or SearchApi (Google Flights), Travelpayouts (cached cheap fares), Duffel (exact bags and fare rules per offer).
