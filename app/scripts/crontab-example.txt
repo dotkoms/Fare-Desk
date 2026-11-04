@@ -1,0 +1,12 @@
+# Fare Desk daily collector — free, keyless history for buy/wait advice
+# Run from the app directory or adjust paths.
+# Logs to /var/log/faredesk-collector.log (create the file and set permissions as needed).
+
+# 06:07 UTC every day: collect daily minima for watched routes
+7 6 * * * cd /srv/faredesk/app && /usr/local/bin/faredesk-collector --watchlist /srv/faredesk/data/watchlist.yaml >> /var/log/faredesk-collector.log 2>&1
+
+# Optional: a few minutes later, evaluate alerts and emit the digest
+12 6 * * * cd /srv/faredesk/app && /usr/local/bin/faredesk-alerts --digest >> /var/log/faredesk-alerts.log 2>&1
+
+# Monthly BTS on-time ingest (adjust year/month or use a wrapper script)
+# 0 3 5 * * cd /srv/faredesk/app && /usr/local/bin/faredesk-bts-ingest --year $(date +\%Y) --month $(date +\%m -d '1 month ago') >> /var/log/faredesk-bts.log 2>&1
