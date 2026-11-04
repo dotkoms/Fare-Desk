@@ -130,6 +130,20 @@ impl Db {
 
             CREATE INDEX IF NOT EXISTS reliability_route ON reliability (origin, dest);
 
+            CREATE TABLE IF NOT EXISTS airfare_baselines (
+                origin     TEXT NOT NULL,
+                dest       TEXT NOT NULL,
+                year       INTEGER NOT NULL,
+                quarter    INTEGER NOT NULL,
+                fare       REAL NOT NULL,
+                passengers REAL,
+                miles      REAL,
+                carrier    TEXT,
+                PRIMARY KEY (origin, dest, year, quarter)
+            );
+
+            CREATE INDEX IF NOT EXISTS airfare_baselines_route ON airfare_baselines (origin, dest);
+
             CREATE TABLE IF NOT EXISTS watches (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 email       TEXT NOT NULL,
@@ -491,36 +505,88 @@ impl Db {
              GROUP BY carrier
              ORDER BY carrier",
         )?;
-        let rows = statement.query_map(params![origin, dest], |row| {
-            let carrier: String = row.get(0)?;
-            let flights: i64 = row.get(1)?;
-            let on_time: i64 = row.get(2)?;
-            let first: String = row.get(3)?;
-            let last: String = row.get(4)?;
-            Ok((carrier, flights, on_time, first, last))
-        })?;
-
-        let mut aggregates = Vec::new();
-        for row in rows {
-            let (carrier, flights, on_time, first, last) = row?;
-            let (Ok(first_date), Ok(last_date)) = (
-                NaiveDate::parse_from_str(&first, "%Y-%m-%d"),
-                NaiveDate::parse_from_str(&last, "%Y-%m-%d"),
-            ) else {
-                continue;
-            };
-            aggregates.push(ReliabilityAggregate {
-                carrier,
-                flights: flights.max(0) as u32,
-                on_time: on_time.max(0) as u32,
-                first_date,
-                last_date,
-            });
-        }
-        Ok(aggregates)
+        let rows = statement
+            .query_map(params![origin, dest], |row| {
+                let carrier: String = row.get(0)?;
+                let flights: i64 = row.get(1)?;
+                let on_time: i64 = row.get(2)?;
+                let first: String = row.get(3)?;
+                let last: String = row.get(4)?;
+                Ok((carrier, flights, on_time, first, last))
+            })?
+            .filter_map(Result::ok)
+            .filter_map(|(carrier, flights, on_time, first, last)| {
+                let first_date = NaiveDate::parse_from_str(&first, "%Y-%m-%d").ok()?;
+                let last_date = NaiveDate::parse_from_str(&last, "%Y-%m-%d").ok()?;
+                Some(ReliabilityAggregate {
+                    carrier,
+                    flights: flights as u32,
+                    on_time: on_time as u32,
+                    first_date,
+                    last_date,
+                })
+            })
+            .collect();
+        Ok(rows)
     }
 
-    // -- Watches and alerts -------------------------------------------------
+    /// Latest DOT Consumer Airfare Report average for a city pair (most recent quarter).
+    pub fn airfare_baseline(
+        &self,
+        origin: &str,
+        dest: &str,
+    ) -> Result<Option<(i32, i32, f64, Option<String>)>, DbError> {
+        let conn = self.conn.lock().expect("db lock");
+        let mut stmt = conn.prepare(
+            "SELECT year, quarter, fare, carrier
+             FROM airfare_baselines
+             WHERE origin = ?1 AND dest = ?2
+             ORDER BY year DESC, quarter DESC
+             LIMIT 1",
+        )?;
+        let row = stmt
+            .query_row(params![origin, dest], |r| {
+                Ok((
+                    r.get::<_, i32>(0)?,
+                    r.get::<_, i32>(1)?,
+                    r.get::<_, f64>(2)?,
+                    r.get::<_, Option<String>>(3)?,
+                ))
+            })
+            .optional()?;
+        Ok(row)
+    }
+
+    /// Upsert quarterly average fares from the DOT report.
+    pub fn record_airfare_baselines(
+        &self,
+        rows: &[(
+            String,
+            String,
+            i32,
+            i32,
+            f64,
+            Option<f64>,
+            Option<f64>,
+            Option<String>,
+        )],
+    ) -> Result<usize, DbError> {
+        let mut conn = self.conn.lock().expect("db lock");
+        let tx = conn.transaction()?;
+        for (origin, dest, year, quarter, fare, passengers, miles, carrier) in rows {
+            tx.execute(
+                "INSERT INTO airfare_baselines
+                 (origin, dest, year, quarter, fare, passengers, miles, carrier)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                 ON CONFLICT(origin, dest, year, quarter)
+                 DO UPDATE SET fare = excluded.fare, passengers = excluded.passengers,
+                               miles = excluded.miles, carrier = excluded.carrier",
+                params![origin, dest, year, quarter, fare, passengers, miles, carrier],
+            )?;
+        }
+        tx.commit()?;
+        Ok(rows.len())
+    }
 
     pub fn create_watch(
         &self,

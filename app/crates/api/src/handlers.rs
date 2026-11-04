@@ -2462,6 +2462,61 @@ fn alert_view(alert: faredesk_store::AlertRow) -> AlertView {
     }
 }
 
+#[derive(Debug, Deserialize)]
+pub struct AirfareBaselineParams {
+    pub from: Option<String>,
+    pub to: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AirfareBaselineResponse {
+    pub route: String,
+    pub year: Option<i32>,
+    pub quarter: Option<i32>,
+    pub average_fare: Option<f64>,
+    pub carrier: Option<String>,
+    pub provenance: Provenance,
+}
+
+/// Latest quarterly average fare from the US DOT Consumer Airfare Report.
+pub async fn airfare_baseline(
+    State(state): State<AppState>,
+    Query(params): Query<AirfareBaselineParams>,
+) -> Result<Json<AirfareBaselineResponse>, ApiError> {
+    let origin = resolve_place(&state, params.from.as_deref().unwrap_or_default())?;
+    let destination = resolve_place(&state, params.to.as_deref().unwrap_or_default())?;
+    let route = format!("{}-{}", origin.code, destination.code);
+
+    let row = state
+        .store()
+        .db
+        .airfare_baseline(&origin.code, &destination.code)
+        .map_err(|error| ApiError::internal(format!("airfare baseline: {error}")))?;
+
+    let mut provenance = base_provenance("airfare-dot", "DOT", if row.is_some() { 1 } else { 0 });
+    if row.is_none() {
+        provenance.notes.push(
+            "No DOT Consumer Airfare Report baseline for this route yet. Ingest with faredesk-airfare-ingest."
+                .to_string(),
+        );
+    }
+
+    let (year, quarter, fare, carrier) = match row {
+        Some((y, q, f, c)) => (Some(y), Some(q), Some(f), c),
+        None => (None, None, None, None),
+    };
+
+    Ok(Json(AirfareBaselineResponse {
+        route,
+        year,
+        quarter,
+        average_fare: fare,
+        carrier,
+        provenance,
+    }))
+}
+
 pub async fn create_alert(
     State(state): State<AppState>,
     Json(body): Json<CreateAlertBody>,

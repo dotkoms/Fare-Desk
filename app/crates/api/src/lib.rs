@@ -319,6 +319,7 @@ pub fn app(state: AppState) -> Router {
         .route("/airport-access", get(handlers::airport_access))
         .route("/door-to-door", get(handlers::door_to_door))
         .route("/reliability", get(handlers::reliability))
+        .route("/airfare-baseline", get(handlers::airfare_baseline))
         .route(
             "/alerts",
             get(handlers::list_alerts).post(handlers::create_alert),
