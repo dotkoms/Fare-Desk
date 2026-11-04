@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getReliability, getDoorToDoor, getAirfareBaseline } from '../lib/api'
+import { getReliability, getDoorToDoor, getAirfareBaseline, getSeasonality, getFareWeather } from '../lib/api'
 import { formatMoney } from '../lib/format'
 
 type Props = {
@@ -14,6 +14,8 @@ export default function ContextPanel({ origin, destination, travelDate, price, c
   const [reliability, setReliability] = useState<string | null>(null)
   const [doorToDoor, setDoorToDoor] = useState<string | null>(null)
   const [baseline, setBaseline] = useState<string | null>(null)
+  const [seasonality, setSeasonality] = useState<string | null>(null)
+  const [weather, setWeather] = useState<string | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -52,6 +54,27 @@ export default function ContextPanel({ origin, destination, travelDate, price, c
       })
       .catch(() => setBaseline('Baseline unavailable'))
 
+    getSeasonality(origin, destination, signal)
+      .then((data) => {
+        const top = data.points[0]
+        if (top) {
+          setSeasonality(
+            `Seasonality: ${top.month} median ${formatMoney(top.median, currency)} (n=${top.sample})`,
+          )
+        } else {
+          setSeasonality('No seasonality data yet')
+        }
+      })
+      .catch(() => setSeasonality('Seasonality unavailable'))
+
+    getFareWeather(origin, destination, travelDate, signal)
+      .then((data) => {
+        setWeather(
+          `Fare weather: ${data.weather.classification} (CV ${(data.weather.cv * 100).toFixed(0)}%, drops ${(data.weather.dropFrequency * 100).toFixed(0)}%)`,
+        )
+      })
+      .catch(() => setWeather('Fare weather unavailable'))
+
     return () => controller.abort()
   }, [origin, destination, travelDate, price, currency])
 
@@ -61,6 +84,8 @@ export default function ContextPanel({ origin, destination, travelDate, price, c
       <p className="intel-copy">{reliability ?? 'Loading reliability…'}</p>
       <p className="intel-copy">{doorToDoor ?? 'Loading door-to-door…'}</p>
       <p className="intel-copy">{baseline ?? 'Loading baseline…'}</p>
+      <p className="intel-copy">{seasonality ?? 'Loading seasonality…'}</p>
+      <p className="intel-copy">{weather ?? 'Loading fare weather…'}</p>
     </div>
   )
 }

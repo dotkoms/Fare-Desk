@@ -323,3 +323,47 @@ export async function getAirfareBaseline(
   const params = new URLSearchParams({ from, to })
   return request(`/api/airfare-baseline?${params}`, { signal })
 }
+
+
+export type SeasonalityPoint = {
+  month: string
+  median: number
+  p10: number
+  p90: number
+  sample: number
+}
+
+export type SeasonalityResponse = {
+  route: string
+  points: SeasonalityPoint[]
+  provenance: Provenance
+}
+
+export async function getSeasonality(
+  from: string,
+  to: string,
+  signal?: AbortSignal,
+): Promise<SeasonalityResponse> {
+  const params = new URLSearchParams({ from, to })
+  return request(`/api/seasonality?${params}`, { signal })
+}
+
+export type FareWeatherResponse = {
+  weather: {
+    classification: string
+    cv: number
+    dropFrequency: number
+    sampleSize: number
+  }
+  provenance: Provenance
+}
+
+export async function getFareWeather(
+  from: string,
+  to: string,
+  date: string,
+  signal?: AbortSignal,
+): Promise<FareWeatherResponse> {
+  const params = new URLSearchParams({ from, to, date })
+  return request(`/api/fare-weather?${params}`, { signal })
+}

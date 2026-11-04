@@ -64,7 +64,7 @@ Ordered by value per effort, keyless first.
 Before more sources, the app should show what the backend already knows:
 
 1. Reliability on the itinerary (on-time rate and the adjusted price). **Surfaced** in the intel tab via ContextPanel.
-2. Seasonality and fare weather in When to buy. (API ready; UI still basic)
+2. Seasonality and fare weather in When to buy. **Surfaced** in the intel tab via ContextPanel.
 3. Door-to-door total on the itinerary. **Surfaced** in the intel tab via ContextPanel.
 4. Explore as a mode on the globe. (API ready)
 5. DOT airfare baseline. **Surfaced** in the intel tab via ContextPanel.
